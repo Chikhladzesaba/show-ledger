@@ -4,31 +4,31 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Show Ledger</title>
-  <meta name="description" content="See what each episode really earns. Revenue tracking for creators.">
+  <meta name="description" content="Track your income and costs by month, quarter and year.">
 
-  <!-- Fonts: the same ones as the portfolio and UTM Wizard -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600&family=Instrument+Serif:ital@1&display=swap" rel="stylesheet">
 
   <style>
-    /* ===== Design tokens: change a value here and the whole app follows ===== */
+    /* ===== Design tokens ===== */
     :root {
-      --ink: #1a1b22;       /* main text */
-      --accent: #006aff;    /* buttons, bars */
-      --border: #c5dcf0;    /* card and input borders */
-      --bg: #f7fbff;        /* page background */
-      --surface: #ffffff;   /* cards */
-      --line: #e6e7eb;      /* table lines, empty bars */
-      --muted: #5f616b;     /* secondary text */
-      --good: #0b7a3e;      /* profit */
-      --danger: #c0392b;    /* delete */
+      --ink: #1a1b22;
+      --accent: #006aff;
+      --border: #c5dcf0;
+      --bg: #f7fbff;
+      --surface: #ffffff;
+      --line: #e6e7eb;
+      --muted: #5f616b;
+      --good: #0b7a3e;
+      --danger: #c0392b;
       --sans: "Inter Tight", system-ui, sans-serif;
       --serif: "Instrument Serif", Georgia, serif;
       --radius: 16px;
     }
 
     * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
 
     body {
       margin: 0;
@@ -57,73 +57,10 @@
       gap: 16px;
     }
     .brand { font-size: 26px; font-weight: 500; margin: 0; }
-    .brand em {
-      font-family: var(--serif);
-      font-size: 30px;
-      font-weight: 400;
-    }
+    .brand em { font-family: var(--serif); font-size: 30px; font-weight: 400; }
     .subtitle { margin: 4px 0 0; font-size: 15px; color: var(--muted); }
-    /* ===== Header buttons ===== */
-    .actions { display: flex; flex-wrap: wrap; gap: 10px; }
-    button.secondary {
-      background: var(--surface);
-      color: var(--ink);
-      border: 1px solid var(--border);
-    }
-    /* ===== Cards ===== */
-    .card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 24px;
-    }
-    .card h2 { margin: 0 0 16px; font-size: 20px; font-weight: 500; }
-    .empty { color: var(--muted); font-style: italic; margin: 0; }
 
-    /* ===== Summary tiles ===== */
-    .tiles { display: flex; flex-wrap: wrap; gap: 16px; }
-    .tile {
-      flex: 1 1 220px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-    .tile-label { font-size: 14px; color: var(--muted); }
-    .tile-value { font-size: 32px; font-weight: 500; }
-
-    /* ===== Forms ===== */
-    form {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      align-items: flex-end;
-      margin-bottom: 20px;
-    }
-    label {
-      flex: 1 1 180px;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      font-size: 13px;
-      color: var(--muted);
-    }
-    input, select {
-      height: 44px;
-      padding: 0 12px;
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      font: 15px var(--sans);
-      color: var(--ink);
-      background: var(--surface);
-    }
-    input:focus, select:focus {
-      outline: 2px solid var(--accent);
-      outline-offset: 1px;
-    }
+    /* ===== Buttons ===== */
     button {
       height: 44px;
       padding: 0 20px;
@@ -135,105 +72,91 @@
       cursor: pointer;
     }
     button:hover { opacity: 0.9; }
-    /* ===== Stream bars ===== */
-    .stream { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
-    .stream:last-child { margin-bottom: 0; }
-    .stream-row { display: flex; justify-content: space-between; font-size: 15px; }
-    .bar { height: 10px; border-radius: 999px; background: var(--line); overflow: hidden; }
-    .bar-fill { height: 100%; border-radius: 999px; background: var(--accent); }
-    .profit { color: var(--good); }
-    .loss { color: var(--danger); }
+    button.secondary {
+      background: var(--surface);
+      color: var(--ink);
+      border: 1px solid var(--border);
+    }
+
+    /* ===== Cards ===== */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+    }
+    .card h2 { margin: 0 0 16px; font-size: 20px; font-weight: 500; }
+    .empty { color: var(--muted); font-style: italic; margin: 0; }
+
+    /* ===== Add entry panel ===== */
+    #entry-panel { max-width: 560px; width: 100%; }
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    .panel-head h2 { margin: 0; }
+
+    #entry-form { display: flex; flex-direction: column; gap: 20px; }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      font-size: 14px;
+      color: var(--muted);
+    }
+    .row { display: flex; flex-wrap: wrap; gap: 12px; }
+    .row .field { flex: 1 1 140px; }
+
+    input, select {
+      height: 48px;
+      padding: 0 14px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      font: 16px var(--sans);
+      color: var(--ink);
+      background: var(--surface);
+    }
+    input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .amount-input { height: 60px; font-size: 28px; font-weight: 500; }
+
+    /* Money in / Money out switch */
+    .segmented {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 4px;
+      padding: 4px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+    }
+    .segmented button { background: transparent; color: var(--muted); }
+    .segmented button[aria-pressed="true"] { background: var(--ink); color: #ffffff; }
+
+    /* Stream / category chips */
+    fieldset { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
+    legend { padding: 0; margin-bottom: 10px; font-size: 14px; color: var(--muted); }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip {
+      background: var(--surface);
+      color: var(--ink);
+      border: 1px solid var(--border);
+      padding: 0 16px;
+    }
+    .chip[aria-pressed="true"] {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #ffffff;
+    }
+    .hint { font-size: 13px; }
+
     /* ===== Tables ===== */
-    #episode-list, #revenue-list { overflow-x: auto; }
-    table { width: 100%; min-width: 480px; border-collapse: collapse; font-size: 15px; }
+    #entries-list { overflow-x: auto; }
+    table { width: 100%; min-width: 600px; border-collapse: collapse; font-size: 15px; }
     th, td { text-align: left; padding: 12px 8px; border-bottom: 1px solid var(--line); }
     th { color: var(--muted); font-size: 13px; font-weight: 500; }
     tr:last-child td { border-bottom: none; }
     .number { text-align: right; }
-
-    button.delete {
-      height: 32px;
-      padding: 0 12px;
-      background: none;
-      color: var(--danger);
-    }
-    button.delete:hover { background: #fdecea; opacity: 1; }
-  </style>
-</head>
-<body>
-  <div class="page">
-
-    <header>
-      <div>
-        <h1 class="brand">Show <em>Ledger</em></h1>
-        <p class="subtitle">See what each episode really earns. Your numbers stay in this browser.</p>
-      </div>
-         <div class="actions">
-        <button type="button" id="csv-button" class="secondary">Export spreadsheet</button>
-      </div>
-    </header>
-
-    <!-- Summary tiles: filled in by JavaScript in a later step -->
-       <div class="tiles">
-      <div class="tile"><span class="tile-label">Total revenue</span><span class="tile-value" id="tile-revenue">—</span></div>
-      <div class="tile"><span class="tile-label">Production cost</span><span class="tile-value" id="tile-cost">—</span></div>
-      <div class="tile"><span class="tile-label">Profit</span><span class="tile-value" id="tile-profit">—</span></div>
-      <div class="tile"><span class="tile-label">Biggest source</span><span class="tile-value" id="tile-source">—</span><span class="tile-label" id="tile-source-name"></span></div>
-    </div>
-    <section id="streams" class="card">
-      <h2>Revenue by stream</h2>
-      <div id="stream-list"></div>
-    </section>
-    <section id="revenue" class="card">
-      <h2>Revenue</h2>
-            <form id="revenue-form">
-        <label>
-          Date
-          <input type="date" id="revenue-date" required>
-        </label>
-        <label>
-          Amount (USD)
-          <input type="number" id="revenue-amount" min="0" step="0.01" required>
-        </label>
-        <label>
-          Stream
-          <select id="revenue-stream"></select>
-        </label>
-        <label>
-          Episode (optional)
-          <select id="revenue-episode"></select>
-        </label>
-        <label>
-          Note
-          <input type="text" id="revenue-note" placeholder="e.g. Sponsor name">
-        </label>
-        <button type="submit">Add revenue</button>
-      </form>
-      <div id="revenue-list"></div>
-    </section>
-
-    <section id="episodes" class="card">
-      <h2>Episodes</h2>
-      <form id="episode-form">
-        <label>
-          Title
-          <input type="text" id="episode-title" required>
-        </label>
-        <label>
-          Publish date
-          <input type="date" id="episode-date" required>
-        </label>
-        <label>
-          Production cost (USD)
-          <input type="number" id="episode-cost" min="0" step="0.01" value="0">
-        </label>
-        <button type="submit">Add episode</button>
-      </form>
-      <div id="episode-list"></div>
-    </section>
-
-  </div>
-
-  <script src="app.js"></script>
-</body>
-</html>
+    .muted { color: var(--muted); }
