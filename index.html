@@ -131,7 +131,7 @@
     button:hover { opacity: 0.9; }
 
     /* ===== Tables ===== */
-    #episode-list { overflow-x: auto; }
+    #episode-list, #revenue-list { overflow-x: auto; }
     table { width: 100%; min-width: 480px; border-collapse: collapse; font-size: 15px; }
     th, td { text-align: left; padding: 12px 8px; border-bottom: 1px solid var(--line); }
     th { color: var(--muted); font-size: 13px; font-weight: 500; }
@@ -167,7 +167,30 @@
 
     <section id="revenue" class="card">
       <h2>Revenue</h2>
-      <p class="empty">Coming next: add revenue and see it by stream.</p>
+            <form id="revenue-form">
+        <label>
+          Date
+          <input type="date" id="revenue-date" required>
+        </label>
+        <label>
+          Amount (USD)
+          <input type="number" id="revenue-amount" min="0" step="0.01" required>
+        </label>
+        <label>
+          Stream
+          <select id="revenue-stream"></select>
+        </label>
+        <label>
+          Episode (optional)
+          <select id="revenue-episode"></select>
+        </label>
+        <label>
+          Note
+          <input type="text" id="revenue-note" placeholder="e.g. Sponsor name">
+        </label>
+        <button type="submit">Add revenue</button>
+      </form>
+      <div id="revenue-list"></div>
     </section>
 
     <section id="episodes" class="card">
