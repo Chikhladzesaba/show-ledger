@@ -1,4 +1,4 @@
-// Show Ledger — app behavior
+// Show Ledger — app behavior 
 // All data is saved in this browser's localStorage under one key.
 
 const STORAGE_KEY = 'showLedger';
@@ -339,7 +339,89 @@ document.getElementById('revenue-list').addEventListener('click', function (even
     renderAll();
   }
 });
+// ===== Backup: download and restore =====
 
+// Download all data as a .json file
+document.getElementById('export-button').addEventListener('click', function () {
+  const backup = {
+    app: 'show-ledger',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    episodes: data.episodes,
+    revenue: data.revenue
+  };
+
+  const file = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(file);
+  const today = new Date().toISOString().slice(0, 10);
+
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `show-ledger-backup-${today}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+});
+
+// The Restore button opens the hidden file picker
+document.getElementById('import-button').addEventListener('click', function () {
+  document.getElementById('import-file').click();
+});
+
+// When a file is picked, check it, clean it, then replace the data
+document.getElementById('import-file').addEventListener('change', function (event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+
+  reader.onload = function () {
+    try {
+      const backup = JSON.parse(reader.result);
+
+      if (!Array.isArray(backup.episodes) || !Array.isArray(backup.revenue)) {
+        throw new Error('The file has no episodes or revenue list.');
+      }
+
+      // Clean every value, so a damaged file can't break the math
+      const episodes = backup.episodes.map(e => ({
+        id: String(e.id || newId()),
+        title: String(e.title || 'Untitled'),
+        date: String(e.date || ''),
+        cost: Number(e.cost) || 0
+      }));
+
+      const revenue = backup.revenue.map(r => ({
+        id: String(r.id || newId()),
+        date: String(r.date || ''),
+        amount: Number(r.amount) || 0,
+        stream: STREAMS.includes(r.stream) ? r.stream : 'Other',
+        episodeId: String(r.episodeId || ''),
+        note: String(r.note || '')
+      }));
+
+      const message =
+        `Restore this backup?\n\n` +
+        `It has ${episodes.length} episodes and ${revenue.length} revenue entries.\n\n` +
+        `This REPLACES everything currently in Show Ledger.`;
+
+      if (confirm(message)) {
+        data = { episodes: episodes, revenue: revenue };
+        saveData();
+        renderAll();
+        alert('Backup restored.');
+      }
+    } catch (error) {
+      console.error('Could not read backup:', error);
+      alert('This file is not a valid Show Ledger backup.');
+    }
+
+    event.target.value = ''; // lets you pick the same file again later
+  };
+
+  reader.readAsText(file);
+});
 // ===== Start =====
 
 renderStreamOptions();
