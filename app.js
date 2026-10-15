@@ -422,6 +422,53 @@ document.getElementById('import-file').addEventListener('change', function (even
 
   reader.readAsText(file);
 });
+// ===== Export: revenue entries as a spreadsheet (CSV) =====
+
+// Wrap a value in quotes if it contains a comma, quote or line break
+function csvCell(value) {
+  const text = String(value);
+  if (/[",\n]/.test(text)) {
+    return '"' + text.replace(/"/g, '""') + '"';
+  }
+  return text;
+}
+
+document.getElementById('csv-button').addEventListener('click', function () {
+  if (data.revenue.length === 0) {
+    alert('There is no revenue to export yet.');
+    return;
+  }
+
+  const header = ['Date', 'Stream', 'Episode', 'Note', 'Amount (USD)'];
+
+  // Oldest first, like a normal ledger
+  const rows = [...data.revenue]
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map(r => [
+      r.date,
+      r.stream,
+      r.episodeId ? episodeTitle(r.episodeId) : '',
+      r.note,
+      r.amount.toFixed(2)
+    ]);
+
+  const csv = [header, ...rows]
+    .map(row => row.map(csvCell).join(','))
+    .join('\n');
+
+  // '\uFEFF' tells Excel the file is UTF-8, so Georgian text shows correctly
+  const file = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(file);
+  const today = new Date().toISOString().slice(0, 10);
+
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `show-ledger-revenue-${today}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+});
 // ===== Start =====
 
 renderStreamOptions();
