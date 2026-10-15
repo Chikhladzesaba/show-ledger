@@ -35,11 +35,17 @@ let data = loadData();
 
 // ===== Small helpers =====
 
+// 1234.5 -> $1,234.50
 function formatUSD(amount) {
   return '$' + amount.toLocaleString('en-US', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   });
+}
+
+// Like formatUSD, but shows a minus for negative numbers: −$50.00
+function formatMoney(amount) {
+  return (amount < 0 ? '−' : '') + formatUSD(Math.abs(amount));
 }
 
 function escapeHtml(text) {
@@ -52,11 +58,158 @@ function newId() {
   return String(Date.now()) + Math.random().toString(36).slice(2, 6);
 }
 
+// 2026, 9 -> '2026-09'
+function monthKey(year, month) {
+  return year + '-' + String(month).padStart(2, '0');
+}
+
 // '2026-09' -> 'Sep 2026'
 function formatMonth(key) {
   const [year, month] = key.split('-');
   return MONTH_NAMES[Number(month) - 1] + ' ' + year;
 }
+
+function sumAmounts(list) {
+  return list.reduce((total, entry) => total + entry.amount, 0);
+}
+
+// ===== Periods: month, quarter, year =====
+
+let periodType = 'quarter';    // 'month', 'quarter' or 'year'
+let anchor = latestAnchor();   // the month the view is centred on
+
+// Start at the latest month that has entries (or this month if none)
+function latestAnchor() {
+  const now = new Date();
+  if (data.entries.length === 0) {
+    return { year: now.getFullYear(), month: now.getMonth() + 1 };
+  }
+  const latest = data.entries.map(e => e.month).sort().pop();
+  const [year, month] = latest.split('-');
+  return { year: Number(year), month: Number(month) };
+}
+
+// All month keys inside the period around the anchor
+function periodMonths(type, a) {
+  if (type === 'month') {
+    return [monthKey(a.year, a.month)];
+  }
+  if (type === 'quarter') {
+    const start = Math.floor((a.month - 1) / 3) * 3 + 1;
+    return [0, 1, 2].map(i => monthKey(a.year, start + i));
+  }
+  return Array.from({ length: 12 }, (_, i) => monthKey(a.year, i + 1));
+}
+
+// Move the anchor by whole periods (1, 3 or 12 months per step)
+function shiftAnchor(type, a, steps) {
+  const size = type === 'month' ? 1 : type === 'quarter' ? 3 : 12;
+  const total = a.year * 12 + (a.month - 1) + steps * size;
+  return { year: Math.floor(total / 12), month: (total % 12) + 1 };
+}
+
+// A readable name for a period, e.g. { main: 'Q3 2026', sub: 'Jul–Sep' }
+function periodLabel(type, a) {
+  if (type === 'month') {
+    return { main: MONTH_NAMES[a.month - 1] + ' ' + a.year, sub: '' };
+  }
+  if (type === 'quarter') {
+    const q = Math.ceil(a.month / 3);
+    const start = (q - 1) * 3;
+    return { main: `Q${q} ${a.year}`, sub: `${MONTH_NAMES[start]}–${MONTH_NAMES[start + 2]}` };
+  }
+  return { main: String(a.year), sub: '' };
+}
+
+// Income, costs, profit and return for a list of months
+function totalsFor(months) {
+  const list = data.entries.filter(e => months.includes(e.month));
+  const income = sumAmounts(list.filter(e => e.type === 'income'));
+  const costs = sumAmounts(list.filter(e => e.type === 'cost'));
+  return {
+    income: income,
+    costs: costs,
+    profit: income - costs,
+    ret: costs > 0 ? income / costs : null   // income per $1 spent
+  };
+}
+
+// '↑ 12% vs Q2 2026'
+function changeText(now, before, prevName) {
+  if (before === 0) return `— vs ${prevName}`;
+  const pct = Math.round((now - before) / Math.abs(before) * 100);
+  const arrow = pct > 0 ? '↑' : pct < 0 ? '↓' : '→';
+  return `${arrow} ${Math.abs(pct)}% vs ${prevName}`;
+}
+
+// Green when a number went up, red when it went down
+function trendClass(now, before) {
+  if (before === 0 || now === before) return '';
+  return now > before ? 'up' : 'down';
+}
+
+function setTile(name, value, valueClass, change, changeClass) {
+  const valueEl = document.getElementById('tile-' + name);
+  const changeEl = document.getElementById('change-' + name);
+  valueEl.textContent = value;
+  valueEl.className = 'tile-value ' + valueClass;
+  changeEl.textContent = change;
+  changeEl.className = 'tile-change ' + changeClass;
+}
+
+function renderOverview() {
+  // The switch and the period name
+  document.querySelectorAll('.period-types button').forEach(button => {
+    button.setAttribute('aria-pressed', String(button.dataset.type === periodType));
+  });
+  const label = periodLabel(periodType, anchor);
+  document.getElementById('period-label').innerHTML =
+    label.sub ? `${label.main} <span>· ${label.sub}</span>` : label.main;
+
+  // This period vs the one before
+  const now = totalsFor(periodMonths(periodType, anchor));
+  const prevAnchor = shiftAnchor(periodType, anchor, -1);
+  const before = totalsFor(periodMonths(periodType, prevAnchor));
+  const prevName = periodLabel(periodType, prevAnchor).main;
+
+  setTile('income', formatUSD(now.income), '',
+    changeText(now.income, before.income, prevName), trendClass(now.income, before.income));
+
+  // Costs going up isn't automatically good or bad, so no color
+  setTile('costs', formatUSD(now.costs), '',
+    changeText(now.costs, before.costs, prevName), '');
+
+  setTile('profit', formatMoney(now.profit), now.profit < 0 ? 'loss' : (now.profit > 0 ? 'profit' : ''),
+    changeText(now.profit, before.profit, prevName), trendClass(now.profit, before.profit));
+
+  if (now.ret === null) {
+    setTile('return', '—', '', 'No costs in this period', '');
+  } else if (before.ret === null) {
+    setTile('return', '$' + now.ret.toFixed(2), '', `— vs ${prevName}`, '');
+  } else {
+    const diff = now.ret - before.ret;
+    const arrow = diff > 0 ? '↑' : diff < 0 ? '↓' : '→';
+    setTile('return', '$' + now.ret.toFixed(2), '',
+      `${arrow} $${Math.abs(diff).toFixed(2)} vs ${prevName}`, trendClass(now.ret, before.ret));
+  }
+}
+
+document.querySelector('.period-types').addEventListener('click', function (event) {
+  const type = event.target.dataset.type;
+  if (!type) return;
+  periodType = type;
+  renderAll();
+});
+
+document.getElementById('period-prev').addEventListener('click', function () {
+  anchor = shiftAnchor(periodType, anchor, -1);
+  renderAll();
+});
+
+document.getElementById('period-next').addEventListener('click', function () {
+  anchor = shiftAnchor(periodType, anchor, 1);
+  renderAll();
+});
 
 // ===== The Add entry form =====
 
@@ -147,7 +300,8 @@ document.getElementById('entry-form').addEventListener('submit', function (event
   const amount = Number(document.getElementById('entry-amount').value);
   if (!(amount > 0)) return;
 
-  const month = document.getElementById('entry-year').value + '-' + document.getElementById('entry-month').value;
+  const year = document.getElementById('entry-year').value;
+  const month = document.getElementById('entry-month').value;
   const otherName = document.getElementById('other-name').value.trim();
   const category = selectedCategory === 'Other' ? (otherName || 'Other') : selectedCategory;
 
@@ -155,14 +309,17 @@ document.getElementById('entry-form').addEventListener('submit', function (event
     id: newId(),
     type: entryType,
     amount: amount,
-    month: month,
+    month: year + '-' + month,
     category: category,
     note: document.getElementById('entry-note').value.trim(),
     episodeId: ''
   });
 
   saveData();
-  renderEntries();
+
+  // Show the period this entry belongs to
+  anchor = { year: Number(year), month: Number(month) };
+  renderAll();
 
   // Clear only what changes between entries; keep month and type
   document.getElementById('entry-amount').value = '';
@@ -171,26 +328,35 @@ document.getElementById('entry-form').addEventListener('submit', function (event
   document.getElementById('entry-amount').focus();
 
   // A short "Saved" confirmation on the button
-  const saveButton = document.getElementById('save-entry');
-  saveButton.textContent = 'Saved ✓';
+  document.getElementById('save-entry').textContent = 'Saved ✓';
   setTimeout(renderTypeToggle, 1200);
 });
 
-// ===== The entries list =====
+// ===== The entries list (only the selected period) =====
 
 function renderEntries() {
   const list = document.getElementById('entries-list');
+  const label = periodLabel(periodType, anchor).main;
+  const months = periodMonths(periodType, anchor);
+
+  document.getElementById('entries-title').textContent = `Entries · ${label}`;
 
   if (data.entries.length === 0) {
     list.innerHTML = '<p class="empty">No entries yet. Click "+ Add entry" to start.</p>';
     return;
   }
 
-  // Newest month first
-  const sorted = [...data.entries].sort((a, b) => b.month.localeCompare(a.month));
+  const inPeriod = data.entries
+    .filter(e => months.includes(e.month))
+    .sort((a, b) => b.month.localeCompare(a.month));   // newest month first
+
+  if (inPeriod.length === 0) {
+    list.innerHTML = `<p class="empty">No entries in ${label}.</p>`;
+    return;
+  }
 
   let rows = '';
-  for (const entry of sorted) {
+  for (const entry of inPeriod) {
     const isIncome = entry.type === 'income';
     rows += `
       <tr>
@@ -229,12 +395,17 @@ document.getElementById('entries-list').addEventListener('click', function (even
   if (confirm(`Delete this ${formatUSD(entry.amount)} ${label} (${entry.category}, ${formatMonth(entry.month)})? This cannot be undone.`)) {
     data.entries = data.entries.filter(e => e.id !== entry.id);
     saveData();
-    renderEntries();
+    renderAll();
   }
 });
 
 // ===== Start =====
 
+function renderAll() {
+  renderOverview();
+  renderEntries();
+}
+
 fillPeriodSelects();
 setType('income');
-renderEntries();
+renderAll();
