@@ -129,7 +129,14 @@
       cursor: pointer;
     }
     button:hover { opacity: 0.9; }
-
+    /* ===== Stream bars ===== */
+    .stream { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+    .stream:last-child { margin-bottom: 0; }
+    .stream-row { display: flex; justify-content: space-between; font-size: 15px; }
+    .bar { height: 10px; border-radius: 999px; background: var(--line); overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 999px; background: var(--accent); }
+    .profit { color: var(--good); }
+    .loss { color: var(--danger); }
     /* ===== Tables ===== */
     #episode-list, #revenue-list { overflow-x: auto; }
     table { width: 100%; min-width: 480px; border-collapse: collapse; font-size: 15px; }
@@ -158,13 +165,16 @@
     </header>
 
     <!-- Summary tiles: filled in by JavaScript in a later step -->
-    <div class="tiles">
-      <div class="tile"><span class="tile-label">Total revenue</span><span class="tile-value">—</span></div>
-      <div class="tile"><span class="tile-label">Production cost</span><span class="tile-value">—</span></div>
-      <div class="tile"><span class="tile-label">Profit</span><span class="tile-value">—</span></div>
-      <div class="tile"><span class="tile-label">Biggest source</span><span class="tile-value">—</span></div>
+       <div class="tiles">
+      <div class="tile"><span class="tile-label">Total revenue</span><span class="tile-value" id="tile-revenue">—</span></div>
+      <div class="tile"><span class="tile-label">Production cost</span><span class="tile-value" id="tile-cost">—</span></div>
+      <div class="tile"><span class="tile-label">Profit</span><span class="tile-value" id="tile-profit">—</span></div>
+      <div class="tile"><span class="tile-label">Biggest source</span><span class="tile-value" id="tile-source">—</span><span class="tile-label" id="tile-source-name"></span></div>
     </div>
-
+    <section id="streams" class="card">
+      <h2>Revenue by stream</h2>
+      <div id="stream-list"></div>
+    </section>
     <section id="revenue" class="card">
       <h2>Revenue</h2>
             <form id="revenue-form">
