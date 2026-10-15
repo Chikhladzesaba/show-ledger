@@ -3,18 +3,27 @@
 
 const STORAGE_KEY = 'showLedger';
 
-// Read saved data from the browser, or start empty
+// The revenue streams. One list, used everywhere in the app.
+const STREAMS = ['Ad revenue', 'Sponsorship', 'Memberships', 'Affiliate', 'Other'];
+
+// ===== Saving and loading =====
+
 function loadData() {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) return JSON.parse(saved);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      return {
+        episodes: parsed.episodes || [],
+        revenue: parsed.revenue || []
+      };
+    }
   } catch (error) {
     console.error('Could not load saved data:', error);
   }
   return { episodes: [], revenue: [] };
 }
 
-// Write current data into the browser
 function saveData() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
@@ -25,6 +34,8 @@ function saveData() {
 }
 
 let data = loadData();
+
+// ===== Small helpers =====
 
 // Show a number as dollars, e.g. 1234.5 -> $1,234.50
 function formatUSD(amount) {
@@ -41,7 +52,24 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-// Draw the episodes table
+// Create a unique id for each new item
+function newId() {
+  return String(Date.now()) + Math.random().toString(36).slice(2, 6);
+}
+
+// Find an episode's title from its id
+function episodeTitle(id) {
+  const episode = data.episodes.find(e => e.id === id);
+  return episode ? episode.title : 'Not tied to an episode';
+}
+
+// Episodes sorted newest first
+function sortedEpisodes() {
+  return [...data.episodes].sort((a, b) => b.date.localeCompare(a.date));
+}
+
+// ===== Drawing the page =====
+
 function renderEpisodes() {
   const list = document.getElementById('episode-list');
 
@@ -50,11 +78,8 @@ function renderEpisodes() {
     return;
   }
 
-  // Newest episodes first
-  const sorted = [...data.episodes].sort((a, b) => b.date.localeCompare(a.date));
-
   let rows = '';
-  for (const episode of sorted) {
+  for (const episode of sortedEpisodes()) {
     rows += `
       <tr>
         <td>${escapeHtml(episode.title)}</td>
@@ -78,7 +103,80 @@ function renderEpisodes() {
     </table>`;
 }
 
-// When the form is submitted, add a new episode
+// Fill the Stream dropdown from the STREAMS list
+function renderStreamOptions() {
+  const select = document.getElementById('revenue-stream');
+  select.innerHTML = STREAMS
+    .map(stream => `<option value="${stream}">${stream}</option>`)
+    .join('');
+}
+
+// Fill the Episode dropdown with the current episodes
+function renderEpisodeOptions() {
+  const select = document.getElementById('revenue-episode');
+  const current = select.value;
+
+  let options = '<option value="">Not tied to an episode</option>';
+  for (const episode of sortedEpisodes()) {
+    options += `<option value="${episode.id}">${escapeHtml(episode.title)}</option>`;
+  }
+  select.innerHTML = options;
+
+  // Keep the previous choice if that episode still exists
+  if (data.episodes.some(e => e.id === current)) {
+    select.value = current;
+  }
+}
+
+function renderRevenue() {
+  const list = document.getElementById('revenue-list');
+
+  if (data.revenue.length === 0) {
+    list.innerHTML = '<p class="empty">No revenue entries yet.</p>';
+    return;
+  }
+
+  // Newest entries first
+  const sorted = [...data.revenue].sort((a, b) => b.date.localeCompare(a.date));
+
+  let rows = '';
+  for (const entry of sorted) {
+    rows += `
+      <tr>
+        <td>${entry.date}</td>
+        <td>${entry.stream}</td>
+        <td>${escapeHtml(episodeTitle(entry.episodeId))}</td>
+        <td>${escapeHtml(entry.note)}</td>
+        <td class="number">${formatUSD(entry.amount)}</td>
+        <td class="number"><button class="delete" data-id="${entry.id}">Delete</button></td>
+      </tr>`;
+  }
+
+  list.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Stream</th>
+          <th>Episode</th>
+          <th>Note</th>
+          <th class="number">Amount</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+// Redraw everything that depends on the data
+function renderAll() {
+  renderEpisodes();
+  renderEpisodeOptions();
+  renderRevenue();
+}
+
+// ===== Episodes: add and delete =====
+
 document.getElementById('episode-form').addEventListener('submit', function (event) {
   event.preventDefault(); // stop the page from reloading
 
@@ -88,20 +186,14 @@ document.getElementById('episode-form').addEventListener('submit', function (eve
 
   if (!title || !date) return;
 
-  data.episodes.push({
-    id: String(Date.now()),
-    title: title,
-    date: date,
-    cost: cost
-  });
+  data.episodes.push({ id: newId(), title: title, date: date, cost: cost });
 
   saveData();
-  renderEpisodes();
+  renderAll();
   event.target.reset();
   document.getElementById('episode-title').focus();
 });
 
-// When a Delete button is clicked, remove that episode
 document.getElementById('episode-list').addEventListener('click', function (event) {
   if (!event.target.classList.contains('delete')) return;
 
@@ -109,12 +201,66 @@ document.getElementById('episode-list').addEventListener('click', function (even
   const episode = data.episodes.find(e => e.id === id);
   if (!episode) return;
 
-  if (confirm(`Delete "${episode.title}"? This cannot be undone.`)) {
+  const linked = data.revenue.filter(r => r.episodeId === id).length;
+  let message = `Delete "${episode.title}"? This cannot be undone.`;
+  if (linked > 0) {
+    message += `\n\n${linked} revenue entr${linked === 1 ? 'y is' : 'ies are'} linked to it. They will be kept, but no longer tied to an episode.`;
+  }
+
+  if (confirm(message)) {
     data.episodes = data.episodes.filter(e => e.id !== id);
+    // Keep the money, just unlink it from the deleted episode
+    data.revenue.forEach(r => {
+      if (r.episodeId === id) r.episodeId = '';
+    });
     saveData();
-    renderEpisodes();
+    renderAll();
   }
 });
 
-// Draw everything when the page first opens
-renderEpisodes();
+// ===== Revenue: add and delete =====
+
+document.getElementById('revenue-form').addEventListener('submit', function (event) {
+  event.preventDefault();
+
+  const date = document.getElementById('revenue-date').value;
+  const amount = Number(document.getElementById('revenue-amount').value);
+  const stream = document.getElementById('revenue-stream').value;
+  const episodeId = document.getElementById('revenue-episode').value;
+  const note = document.getElementById('revenue-note').value.trim();
+
+  if (!date || !(amount > 0)) return;
+
+  data.revenue.push({
+    id: newId(),
+    date: date,
+    amount: amount,
+    stream: stream,
+    episodeId: episodeId,
+    note: note
+  });
+
+  saveData();
+  renderRevenue();
+  event.target.reset();
+  document.getElementById('revenue-amount').focus();
+});
+
+document.getElementById('revenue-list').addEventListener('click', function (event) {
+  if (!event.target.classList.contains('delete')) return;
+
+  const id = event.target.dataset.id;
+  const entry = data.revenue.find(r => r.id === id);
+  if (!entry) return;
+
+  if (confirm(`Delete this ${formatUSD(entry.amount)} entry? This cannot be undone.`)) {
+    data.revenue = data.revenue.filter(r => r.id !== id);
+    saveData();
+    renderRevenue();
+  }
+});
+
+// ===== Start =====
+
+renderStreamOptions();
+renderAll();
