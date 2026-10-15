@@ -151,7 +151,59 @@
       color: #ffffff;
     }
     .hint { font-size: 13px; }
+    /* ===== Period switch ===== */
+    .period-bar {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+    .period-types {
+      display: inline-flex;
+      gap: 4px;
+      padding: 4px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+    }
+    .period-types button {
+      height: 36px;
+      padding: 0 18px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .period-types button[aria-pressed="true"] { background: var(--ink); color: #ffffff; }
+    .period-nav { display: flex; align-items: center; gap: 8px; }
+    .icon-button {
+      width: 44px;
+      padding: 0;
+      background: var(--surface);
+      color: var(--ink);
+      border: 1px solid var(--border);
+      font-size: 20px;
+    }
+    .period-label { min-width: 170px; text-align: center; font-size: 18px; font-weight: 500; }
+    .period-label span { color: var(--muted); font-weight: 400; font-size: 15px; }
 
+    /* ===== Summary tiles ===== */
+    .tiles { display: flex; flex-wrap: wrap; gap: 16px; }
+    .tile {
+      flex: 1 1 220px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .tile-label { font-size: 14px; color: var(--muted); }
+    .tile-value { font-size: 32px; font-weight: 500; }
+    .tile-change { font-size: 13px; color: var(--muted); min-height: 18px; }
+    .up, .profit { color: var(--good); }
+    .down, .loss { color: var(--danger); }
     /* ===== Tables ===== */
     #entries-list { overflow-x: auto; }
     table { width: 100%; min-width: 600px; border-collapse: collapse; font-size: 15px; }
@@ -232,9 +284,27 @@
         <button type="submit" id="save-entry">Save income</button>
       </form>
     </section>
+    <div class="period-bar">
+      <div class="period-types" role="group" aria-label="Period type">
+        <button type="button" data-type="month" aria-pressed="false">Month</button>
+        <button type="button" data-type="quarter" aria-pressed="true">Quarter</button>
+        <button type="button" data-type="year" aria-pressed="false">Year</button>
+      </div>
+      <div class="period-nav">
+        <button type="button" id="period-prev" class="icon-button" aria-label="Previous period">‹</button>
+        <span class="period-label" id="period-label"></span>
+        <button type="button" id="period-next" class="icon-button" aria-label="Next period">›</button>
+      </div>
+    </div>
 
+    <div class="tiles">
+      <div class="tile"><span class="tile-label">Income</span><span class="tile-value" id="tile-income">—</span><span class="tile-change" id="change-income"></span></div>
+      <div class="tile"><span class="tile-label">Costs</span><span class="tile-value" id="tile-costs">—</span><span class="tile-change" id="change-costs"></span></div>
+      <div class="tile"><span class="tile-label">Profit</span><span class="tile-value" id="tile-profit">—</span><span class="tile-change" id="change-profit"></span></div>
+      <div class="tile"><span class="tile-label">Return per $1 spent</span><span class="tile-value" id="tile-return">—</span><span class="tile-change" id="change-return"></span></div>
+    </div>
     <section class="card">
-      <h2>Entries</h2>
+      <h2 id="entries-title">Entries</h2>
       <div id="entries-list"></div>
     </section>
 
