@@ -160,3 +160,86 @@
     tr:last-child td { border-bottom: none; }
     .number { text-align: right; }
     .muted { color: var(--muted); }
+    .money-in { color: var(--good); }
+
+    .badge { font-size: 13px; padding: 3px 10px; border-radius: 999px; }
+    .badge.income { background: #e8f1ff; color: #0047b3; }
+    .badge.cost { background: #eef0f3; color: #3d4654; }
+
+    button.delete {
+      height: 32px;
+      padding: 0 12px;
+      background: none;
+      color: var(--danger);
+    }
+    button.delete:hover { background: #fdecea; opacity: 1; }
+  </style>
+</head>
+<body>
+  <div class="page">
+
+    <header>
+      <div>
+        <h1 class="brand">Show <em>Ledger</em></h1>
+        <p class="subtitle">Your income and costs over time. Your numbers stay in this browser.</p>
+      </div>
+      <button type="button" id="open-entry">+ Add entry</button>
+    </header>
+
+    <section id="entry-panel" class="card" hidden>
+      <div class="panel-head">
+        <h2>Add entry</h2>
+        <button type="button" id="close-entry" class="secondary">Close</button>
+      </div>
+
+      <form id="entry-form">
+        <div class="segmented" role="group" aria-label="Entry type">
+          <button type="button" id="type-income" aria-pressed="true">Money in</button>
+          <button type="button" id="type-cost" aria-pressed="false">Money out</button>
+        </div>
+
+        <label class="field">
+          Amount (USD)
+          <input type="number" id="entry-amount" class="amount-input" min="0" step="0.01" placeholder="0.00" required>
+        </label>
+
+        <div class="row">
+          <label class="field">
+            Which month is this for?
+            <select id="entry-month"></select>
+          </label>
+          <label class="field">
+            Year
+            <select id="entry-year"></select>
+          </label>
+        </div>
+
+        <fieldset>
+          <legend id="category-legend">Where did it come from?</legend>
+          <div class="chips" id="category-chips"></div>
+          <label class="field" id="other-field" hidden>
+            Name it
+            <input type="text" id="other-name" placeholder="e.g. Merch, Live event, Grant">
+            <span class="hint">It shows up in your reports under this name.</span>
+          </label>
+        </fieldset>
+
+        <label class="field">
+          Note (optional)
+          <input type="text" id="entry-note" placeholder="e.g. Sponsor name">
+        </label>
+
+        <button type="submit" id="save-entry">Save income</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Entries</h2>
+      <div id="entries-list"></div>
+    </section>
+
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
