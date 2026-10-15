@@ -37,9 +37,10 @@ let data = loadData();
 
 // ===== Small helpers =====
 
-// Show a number as dollars, e.g. 1234.5 -> $1,234.50
+// Show a number as dollars, e.g. 1234.5 -> $1,234.50 and -20 -> −$20.00
 function formatUSD(amount) {
-  return '$' + amount.toLocaleString('en-US', {
+  const sign = amount < 0 ? '−' : '';
+  return sign + '$' + Math.abs(amount).toLocaleString('en-US', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   });
@@ -68,7 +69,78 @@ function sortedEpisodes() {
   return [...data.episodes].sort((a, b) => b.date.localeCompare(a.date));
 }
 
+// ===== Calculations (worked out fresh, never stored) =====
+
+// Add up one field across a list, e.g. sum(data.revenue, 'amount')
+function sum(list, field) {
+  return list.reduce((total, item) => total + item[field], 0);
+}
+
+// All revenue linked to one episode
+function revenueForEpisode(id) {
+  return sum(data.revenue.filter(r => r.episodeId === id), 'amount');
+}
+
+// Total per stream, biggest first
+function streamTotals() {
+  return STREAMS
+    .map(stream => ({
+      stream: stream,
+      total: sum(data.revenue.filter(r => r.stream === stream), 'amount')
+    }))
+    .sort((a, b) => b.total - a.total);
+}
+
 // ===== Drawing the page =====
+
+function renderSummary() {
+  const totalRevenue = sum(data.revenue, 'amount');
+  const totalCost = sum(data.episodes, 'cost');
+  const profit = totalRevenue - totalCost;
+  const hasData = data.revenue.length > 0 || data.episodes.length > 0;
+
+  document.getElementById('tile-revenue').textContent = hasData ? formatUSD(totalRevenue) : '—';
+  document.getElementById('tile-cost').textContent = hasData ? formatUSD(totalCost) : '—';
+
+  const profitTile = document.getElementById('tile-profit');
+  profitTile.textContent = hasData ? formatUSD(profit) : '—';
+  profitTile.className = 'tile-value' + (hasData ? (profit < 0 ? ' loss' : ' profit') : '');
+
+  const sourceTile = document.getElementById('tile-source');
+  const sourceName = document.getElementById('tile-source-name');
+  if (totalRevenue > 0) {
+    const top = streamTotals()[0];
+    sourceTile.textContent = Math.round(top.total / totalRevenue * 100) + '%';
+    sourceName.textContent = top.stream;
+  } else {
+    sourceTile.textContent = '—';
+    sourceName.textContent = '';
+  }
+}
+
+function renderStreams() {
+  const list = document.getElementById('stream-list');
+  const totalRevenue = sum(data.revenue, 'amount');
+
+  if (totalRevenue === 0) {
+    list.innerHTML = '<p class="empty">Add revenue to see how it splits by stream.</p>';
+    return;
+  }
+
+  let html = '';
+  for (const item of streamTotals()) {
+    const percent = Math.round(item.total / totalRevenue * 100);
+    html += `
+      <div class="stream">
+        <div class="stream-row">
+          <span>${item.stream}</span>
+          <span>${formatUSD(item.total)} · ${percent}%</span>
+        </div>
+        <div class="bar"><div class="bar-fill" style="width: ${percent}%"></div></div>
+      </div>`;
+  }
+  list.innerHTML = html;
+}
 
 function renderEpisodes() {
   const list = document.getElementById('episode-list');
@@ -80,11 +152,15 @@ function renderEpisodes() {
 
   let rows = '';
   for (const episode of sortedEpisodes()) {
+    const revenue = revenueForEpisode(episode.id);
+    const profit = revenue - episode.cost;
     rows += `
       <tr>
         <td>${escapeHtml(episode.title)}</td>
         <td>${episode.date}</td>
+        <td class="number">${formatUSD(revenue)}</td>
         <td class="number">${formatUSD(episode.cost)}</td>
+        <td class="number ${profit < 0 ? 'loss' : 'profit'}">${formatUSD(profit)}</td>
         <td class="number"><button class="delete" data-id="${episode.id}">Delete</button></td>
       </tr>`;
   }
@@ -95,7 +171,9 @@ function renderEpisodes() {
         <tr>
           <th>Title</th>
           <th>Published</th>
+          <th class="number">Revenue</th>
           <th class="number">Cost</th>
+          <th class="number">Profit</th>
           <th></th>
         </tr>
       </thead>
@@ -170,6 +248,8 @@ function renderRevenue() {
 
 // Redraw everything that depends on the data
 function renderAll() {
+  renderSummary();
+  renderStreams();
   renderEpisodes();
   renderEpisodeOptions();
   renderRevenue();
@@ -241,7 +321,7 @@ document.getElementById('revenue-form').addEventListener('submit', function (eve
   });
 
   saveData();
-  renderRevenue();
+  renderAll();
   event.target.reset();
   document.getElementById('revenue-amount').focus();
 });
@@ -256,7 +336,7 @@ document.getElementById('revenue-list').addEventListener('click', function (even
   if (confirm(`Delete this ${formatUSD(entry.amount)} entry? This cannot be undone.`)) {
     data.revenue = data.revenue.filter(r => r.id !== id);
     saveData();
-    renderRevenue();
+    renderAll();
   }
 });
 
