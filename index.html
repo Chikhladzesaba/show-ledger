@@ -24,6 +24,48 @@
     }
     section h2 { margin-top: 0; font-size: 1.2rem; }
     .empty { color: #999; font-style: italic; }
+
+    /* Forms */
+    form {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: flex-end;
+      margin-bottom: 16px;
+    }
+    label {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 0.85rem;
+      color: #555;
+    }
+    input {
+      padding: 8px 10px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font: inherit;
+      font-size: 0.95rem;
+    }
+    button {
+      padding: 9px 16px;
+      border: none;
+      border-radius: 6px;
+      background: #1a1a1a;
+      color: #fff;
+      font: inherit;
+      cursor: pointer;
+    }
+    button:hover { background: #333; }
+
+    /* Tables */
+    #episode-list { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
+    th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #eee; }
+    th { color: #666; font-weight: 600; font-size: 0.85rem; }
+    .number { text-align: right; }
+    button.delete { background: none; color: #c0392b; padding: 4px 8px; }
+    button.delete:hover { background: #fdecea; }
   </style>
 </head>
 <body>
@@ -32,7 +74,22 @@
 
   <section id="episodes">
     <h2>Episodes</h2>
-    <p class="empty">No episodes yet.</p>
+    <form id="episode-form">
+      <label>
+        Title
+        <input type="text" id="episode-title" required>
+      </label>
+      <label>
+        Publish date
+        <input type="date" id="episode-date" required>
+      </label>
+      <label>
+        Production cost (USD)
+        <input type="number" id="episode-cost" min="0" step="0.01" value="0">
+      </label>
+      <button type="submit">Add episode</button>
+    </form>
+    <div id="episode-list"></div>
   </section>
 
   <section id="revenue">
@@ -44,5 +101,7 @@
     <h2>Summary</h2>
     <p class="empty">Add episodes and revenue to see totals.</p>
   </section>
+
+  <script src="app.js"></script>
 </body>
 </html>
