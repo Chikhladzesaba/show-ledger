@@ -225,4 +225,16 @@ document.getElementById('entries-list').addEventListener('click', function (even
   const entry = data.entries.find(e => e.id === event.target.dataset.id);
   if (!entry) return;
 
-  const label = entry.type === 'income' ?
+  const label = entry.type === 'income' ? 'income' : 'cost';
+  if (confirm(`Delete this ${formatUSD(entry.amount)} ${label} (${entry.category}, ${formatMonth(entry.month)})? This cannot be undone.`)) {
+    data.entries = data.entries.filter(e => e.id !== entry.id);
+    saveData();
+    renderEntries();
+  }
+});
+
+// ===== Start =====
+
+fillPeriodSelects();
+setType('income');
+renderEntries();
