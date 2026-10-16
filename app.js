@@ -150,7 +150,7 @@ const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Se
 
 function loadData() {
   const empty = {
-    entries: [], series: [],
+    entries: [], series: [], people: [],
     channels: [{ id: 'main', name: 'My channel' }],
     settings: { mainCurrency: 'USD', gelPerUsd: 0, activeChannel: 'all', taxRate: 0, taxBase: 'income' }
   };
@@ -178,11 +178,12 @@ function loadData() {
         if (!e.currency) e.currency = 'USD';
         if (!e.channelId) e.channelId = firstChannel;
       });
+      const people = parsed.people || [];
       series.forEach(s => {
         if (!s.currency) s.currency = 'USD';
         if (!s.channelId) s.channelId = firstChannel;
       });
-      return { entries, series, channels, settings };
+      return { entries, series, channels, settings, people };
     }
   } catch (error) {
     console.error('Could not load saved data:', error);
@@ -356,6 +357,7 @@ function generateRecurring() {
         id: newId(), type: s.type, amount: s.amount, month: month, span: 1,
         category: s.category, subtype: s.subtype, brand: s.brand, note: s.note,
         currency: s.currency || 'USD', gelPerUsd: s.gelPerUsd || 0, channelId: s.channelId,
+        person: s.person || '', hours: s.hours || 0, payType: s.payType || '', hourlyRate: s.hourlyRate || 0,
         status: 'expected', seriesId: s.id, episodeId: ''
       });
       added++;
@@ -665,6 +667,7 @@ let selectedSub = 'YouTube';              // '' = none picked
 let entrySpan = 1;                        // 1 = a month, 3 = a quarter, 12 = a year
 let entryStatus = 'paid';                 // 'paid' or 'expected'
 let entryCurrency = 'USD';                // the currency this entry was paid in
+let entryPayType = 'fixed';               // People costs: 'fixed' or 'hourly'
 let editingId = null;                     // the id of the entry being edited, or null when adding
 let beforeEdit = null;                    // the form choices to bring back after editing
 let repeatsWhenOpened = false;            // the "Repeats" box when the edit started
@@ -746,6 +749,8 @@ function renderSubChips() {
   document.getElementById('sub-other-field').hidden = selectedSub !== 'Other';
 
   document.getElementById('brand-field').hidden = !definition.brand;
+  document.getElementById('people-fields').hidden = !hasPeopleFields();
+  renderPeopleFields();
 
   // The "Name it" example for a sub-type's Other
   document.getElementById('sub-other-name').placeholder = definition.subOther || '';
@@ -878,6 +883,7 @@ const drawer = document.getElementById('entry-drawer');
 
 function showDrawer() {
   renderBrandList();
+  renderPeopleList();
   drawer.showModal();
   document.body.classList.add('drawer-open');
   document.getElementById('entry-amount').focus();
@@ -885,7 +891,7 @@ function showDrawer() {
 
 // Empty the fields that differ between entries
 function clearEntryFields() {
-  ['entry-amount', 'entry-note', 'other-name', 'sub-other-name', 'entry-brand']
+  ['entry-amount', 'entry-note', 'other-name', 'sub-other-name', 'entry-brand', 'entry-person', 'entry-hours', 'entry-hour-rate']
     .forEach(id => { document.getElementById(id).value = ''; });
   document.getElementById('entry-repeats').checked = false;
   renderSpreadHint();
@@ -920,7 +926,7 @@ function ensureYearOption(year) {
 function openForEdit(entry) {
   // Remember the choices from before, to restore them when editing ends
   if (!editingId) {
-    beforeEdit = { entryType, selectedCategory, selectedSub, entrySpan, entryStatus, entryCurrency };
+    beforeEdit = { entryType, selectedCategory, selectedSub, entrySpan, entryStatus, entryCurrency, entryPayType };
   }
   editingId = entry.id;
   entryType = entry.type;
@@ -955,6 +961,12 @@ function openForEdit(entry) {
   document.getElementById('entry-brand').value = entry.brand || '';
   document.getElementById('entry-note').value = entry.note || '';
 
+  // Person and hours (People costs)
+  document.getElementById('entry-person').value = entry.person || '';
+  document.getElementById('entry-hours').value = entry.hours || '';
+  document.getElementById('entry-hour-rate').value = entry.hourlyRate || '';
+  entryPayType = entry.payType === 'hourly' ? 'hourly' : 'fixed';
+
   // Currency, rate and channel
   entryCurrency = entry.currency || 'USD';
   document.getElementById('entry-rate').value = entry.gelPerUsd || data.settings.gelPerUsd || '';
@@ -988,6 +1000,7 @@ drawer.addEventListener('close', function () {
       entrySpan = beforeEdit.entrySpan;
       entryStatus = beforeEdit.entryStatus;
       entryCurrency = beforeEdit.entryCurrency;
+      entryPayType = beforeEdit.entryPayType;
       beforeEdit = null;
     }
     renderChips();
@@ -1048,15 +1061,18 @@ document.getElementById('entry-form').addEventListener('submit', function (event
     status: entryStatus,
     currency: entryCurrency,
     gelPerUsd: gelPerUsd,
-    channelId: channelId
+    channelId: channelId,
+    ...peopleFieldsForSave()
   };
+  rememberPerson(fields);
   const repeats = entrySpan === 1 && document.getElementById('entry-repeats').checked;
 
   // The details a series copies into each new month
   const template = () => ({
     type: fields.type, amount: fields.amount, category: fields.category,
     subtype: fields.subtype, brand: fields.brand, note: fields.note,
-    currency: fields.currency, gelPerUsd: fields.gelPerUsd, channelId: fields.channelId
+    currency: fields.currency, gelPerUsd: fields.gelPerUsd, channelId: fields.channelId,
+    person: fields.person, hours: fields.hours, payType: fields.payType, hourlyRate: fields.hourlyRate
   });
   const startSeries = entry => {
     const s = Object.assign({ id: newId(), start: entry.month, end: '', skipped: [] }, template());
@@ -1120,6 +1136,9 @@ document.getElementById('entry-form').addEventListener('submit', function (event
   document.getElementById('other-name').value = '';
   document.getElementById('sub-other-name').value = '';
   document.getElementById('entry-brand').value = '';
+  ['entry-person', 'entry-hours', 'entry-hour-rate'].forEach(id => { document.getElementById(id).value = ''; });
+  entryPayType = 'fixed';
+  renderPeopleFields();
   document.getElementById('entry-repeats').checked = false;
   renderSpreadHint();
   renderStatus();
@@ -1166,7 +1185,7 @@ function renderEntries() {
     const sign = isIncome ? '+' : '−';
     const showChannel = data.settings.activeChannel === 'all' && data.channels.length > 1;
     const channelTag = showChannel ? `<span class="channel-tag">${escapeHtml(channelName(entry.channelId))}</span>` : '';
-    const details = channelTag + [entry.brand ? `<strong>${escapeHtml(entry.brand)}</strong>` : '', escapeHtml(entry.note)]
+    const details = channelTag + [entry.brand ? `<strong>${escapeHtml(entry.brand)}</strong>` : '', peopleText(entry), escapeHtml(entry.note)]
       .filter(Boolean)
       .join(' · ');
 
@@ -1581,6 +1600,7 @@ function buildSummary() {
     <table class="group-table"><tbody>${groupRows(income)}</tbody></table>
     <h2>Costs by category</h2>
     <table class="group-table"><tbody>${groupRows(costs)}</tbody></table>
+    ${teamSummary(months)}
     <h2>Pending (all months)</h2>
     <table class="group-table"><tbody>
       <tr><td>Still owed to you</td><td class="number">${formatMain(owed)}</td></tr>
@@ -1639,6 +1659,212 @@ document.getElementById('copy-summary').addEventListener('click', async function
   }
 });
 
+// ===== People and hours (Money out → People) =====
+
+function hasPeopleFields() {
+  return entryType === 'cost' && selectedCategory === 'People';
+}
+
+function renderPeopleFields() {
+  if (!hasPeopleFields()) return;
+  document.querySelectorAll('.pay-types button').forEach(button => {
+    button.setAttribute('aria-pressed', String(button.dataset.pay === entryPayType));
+  });
+  document.getElementById('hour-rate-field').hidden = entryPayType !== 'hourly';
+  renderHoursHint();
+}
+
+// "32 h × ₾25.00 = ₾800.00" or "Effective cost: ₾25.00 per hour"
+function renderHoursHint() {
+  const hint = document.getElementById('hours-hint');
+  const hours = Number(document.getElementById('entry-hours').value);
+  const rate = Number(document.getElementById('entry-hour-rate').value);
+  const amount = Number(document.getElementById('entry-amount').value);
+  if (entryPayType === 'hourly') {
+    hint.textContent = hours > 0 && rate > 0
+      ? `${hours} h × ${formatIn(rate, entryCurrency)} = ${formatIn(hours * rate, entryCurrency)} (filled in as the amount)`
+      : 'Type the hours and the rate; the amount is calculated for you.';
+  } else {
+    hint.textContent = hours > 0 && amount > 0
+      ? `Effective cost: ${formatIn(amount / hours, entryCurrency)} per hour`
+      : 'Optional: add the hours to see what one hour of work really costs.';
+  }
+}
+
+// By the hour: amount = hours × rate
+function fillAmountFromHours() {
+  if (entryPayType !== 'hourly') return;
+  const hours = Number(document.getElementById('entry-hours').value);
+  const rate = Number(document.getElementById('entry-hour-rate').value);
+  if (hours > 0 && rate > 0) {
+    document.getElementById('entry-amount').value = Math.round(hours * rate * 100) / 100;
+    renderSpreadHint();
+    renderConvertHint();
+  }
+}
+
+document.querySelector('.pay-types').addEventListener('click', function (event) {
+  const pay = event.target.dataset.pay;
+  if (!pay) return;
+  entryPayType = pay;
+  fillAmountFromHours();
+  renderPeopleFields();
+});
+['entry-hours', 'entry-hour-rate'].forEach(id => {
+  document.getElementById(id).addEventListener('input', function () {
+    fillAmountFromHours();
+    renderHoursHint();
+  });
+});
+document.getElementById('entry-amount').addEventListener('input', renderHoursHint);
+
+// "giorgi" -> "Giorgi" if that spelling was used before
+function matchPerson(typed) {
+  const clean = text => text.toLowerCase().replace(/[\s\-.]/g, '');
+  const known = data.people.find(p => clean(p.name) === clean(typed));
+  return known ? known.name : typed;
+}
+
+// Typing a known name fills in how they're paid, their rate and their role
+document.getElementById('entry-person').addEventListener('change', function (event) {
+  const typed = event.target.value.trim();
+  if (!typed) return;
+  const clean = text => text.toLowerCase().replace(/[\s\-.]/g, '');
+  const known = data.people.find(p => clean(p.name) === clean(typed));
+  if (!known) return;
+  event.target.value = known.name;
+  entryPayType = known.payType === 'hourly' ? 'hourly' : 'fixed';
+  if (known.rate) document.getElementById('entry-hour-rate').value = known.rate;
+  if (known.role && currentDefinition().subs.includes(known.role)) selectedSub = known.role;
+  renderSubChips();
+  fillAmountFromHours();
+});
+
+function renderPeopleList() {
+  document.getElementById('people-list').innerHTML = data.people
+    .map(p => `<option value="${escapeHtml(p.name)}"></option>`)
+    .join('');
+}
+
+// The person fields that go into a saved entry
+function peopleFieldsForSave() {
+  if (!hasPeopleFields()) return { person: '', hours: 0, payType: '', hourlyRate: 0 };
+  const typed = document.getElementById('entry-person').value.trim();
+  const hours = Number(document.getElementById('entry-hours').value);
+  const rate = Number(document.getElementById('entry-hour-rate').value);
+  return {
+    person: typed ? matchPerson(typed) : '',
+    hours: hours > 0 ? hours : 0,
+    payType: entryPayType,
+    hourlyRate: entryPayType === 'hourly' && rate > 0 ? rate : 0
+  };
+}
+
+// Remember a person's pay type, rate and role for next time
+function rememberPerson(fields) {
+  if (!fields.person) return;
+  let person = data.people.find(p => p.name === fields.person);
+  if (!person) {
+    person = { name: fields.person };
+    data.people.push(person);
+  }
+  person.payType = fields.payType;
+  if (fields.hourlyRate) person.rate = fields.hourlyRate;
+  if (fields.subtype) person.role = fields.subtype;
+}
+
+// "Giorgi · 32 h × ₾25.00" for the entries list
+function peopleText(entry) {
+  if (!entry.person && !entry.hours) return '';
+  const parts = [];
+  if (entry.person) parts.push(escapeHtml(entry.person));
+  if (entry.hours) {
+    parts.push(entry.payType === 'hourly' && entry.hourlyRate
+      ? `${entry.hours} h × ${formatIn(entry.hourlyRate, entry.currency)}`
+      : `${entry.hours} h`);
+  }
+  return parts.join(' · ');
+}
+
+// Hours inside a list of months (spread like money for quarter/year entries)
+function hoursIn(entry, months) {
+  const covered = entryMonths(entry);
+  const inside = covered.filter(key => months.includes(key)).length;
+  return (entry.hours || 0) / covered.length * inside;
+}
+
+// One row per person: hours, cost, cost per hour
+function teamRows(months) {
+  const rows = {};
+  for (const e of visibleEntries()) {
+    if (e.type !== 'cost' || e.category !== 'People') continue;
+    const hours = hoursIn(e, months);
+    const cost = amountIn(e, months);
+    if (hours === 0 && cost === 0) continue;
+    const name = e.person || (e.subtype ? `${e.subtype} (no name)` : 'No name');
+    if (!rows[name]) rows[name] = { name: name, role: e.subtype || '', hours: 0, hourCost: 0, cost: 0, expected: false };
+    const row = rows[name];
+    row.cost += cost;
+    row.hours += hours;
+    if (hours > 0) row.hourCost += cost;   // cost per hour only uses entries with hours
+    if (e.status === 'expected') row.expected = true;
+    if (e.subtype) row.role = e.subtype;
+  }
+  return Object.values(rows).sort((a, b) => b.cost - a.cost);
+}
+
+function renderTeam() {
+  const months = periodMonths(periodType, anchor);
+  const rows = teamRows(months);
+  const card = document.getElementById('team-card');
+  card.hidden = !rows.some(r => r.hours > 0);
+  if (card.hidden) return;
+
+  const label = periodLabel(periodType, anchor).main;
+  const prevAnchor = shiftAnchor(periodType, anchor, -1);
+  const prevName = periodLabel(periodType, prevAnchor).main;
+  const before = teamRows(periodMonths(periodType, prevAnchor));
+  document.getElementById('team-title').textContent = `Team hours · ${label}`;
+
+  const fmtHours = h => (Math.round(h * 10) / 10) + ' h';
+  const body = rows.map(r => {
+    const old = before.find(b => b.name === r.name);
+    const diff = old ? r.hours - old.hours : null;
+    const change = diff === null || old.hours === 0 ? '—'
+      : (diff > 0 ? `↑ ${fmtHours(diff)}` : diff < 0 ? `↓ ${fmtHours(-diff)}` : '→ same');
+    return `
+      <tr>
+        <td>${escapeHtml(r.name)}${r.role && !r.name.startsWith(r.role) ? `<span class="small">${escapeHtml(r.role)}</span>` : ''}</td>
+        <td class="number">${r.hours ? fmtHours(r.hours) : '—'}</td>
+        <td class="number">${formatMain(r.cost)}</td>
+        <td class="number">${r.hours ? formatMain(r.hourCost / r.hours) : '—'}</td>
+        <td class="number muted">${change}</td>
+      </tr>`;
+  }).join('');
+  const totalHours = rows.reduce((t, r) => t + r.hours, 0);
+  const totalCost = rows.reduce((t, r) => t + r.cost, 0);
+
+  document.getElementById('team-list').innerHTML = `
+    <table>
+      <thead><tr><th>Person</th><th class="number">Hours</th><th class="number">Cost</th><th class="number">Per hour</th><th class="number">Hours vs ${prevName}</th></tr></thead>
+      <tbody>${body}
+        <tr><td><strong>Total</strong></td><td class="number"><strong>${fmtHours(totalHours)}</strong></td><td class="number"><strong>${formatMain(totalCost)}</strong></td><td></td><td></td></tr>
+      </tbody>
+    </table>`;
+  document.getElementById('team-note').textContent = rows.some(r => r.expected)
+    ? 'Includes payments still to pay, so the team cost is complete.'
+    : '';
+}
+
+// Team table for the Summary (empty when nobody logged hours)
+function teamSummary(months) {
+  const rows = teamRows(months);
+  if (!rows.some(r => r.hours > 0)) return '';
+  return `
+    <h2>Team hours</h2>
+    <table class="group-table"><tbody>${rows.map(r => `<tr><td>${escapeHtml(r.name)}${r.role && !r.name.startsWith(r.role) ? `<span class="small">${escapeHtml(r.role)}</span>` : ''}</td><td class="number">${r.hours ? (Math.round(r.hours * 10) / 10) + ' h' : '—'}</td><td class="number">${formatMain(r.cost)}</td></tr>`).join('')}</tbody></table>`;
+}
+
 // ===== Welcome card: only before the first entry =====
 
 function renderWelcome() {
@@ -1652,6 +1878,7 @@ function renderAll() {
   renderWelcome();
   renderOverview();
   renderPending();
+  renderTeam();
   renderForecast();
   renderChart();
   renderBreakdowns();
