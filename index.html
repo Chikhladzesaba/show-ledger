@@ -316,6 +316,20 @@
     }
     tr.child-row td:first-child { padding-left: 28px; }
     tr.child-row td { font-size: 14px; }
+    .scope-field { padding: 14px 16px; border: 1px solid var(--border); border-radius: 12px; background: #eef5ff; }
+    .scope-field legend { float: left; width: 100%; margin-bottom: 10px; }
+    .scope-field legend + * { clear: both; }
+    .scope-types { display: flex; width: 100%; }
+    .scope-types button { flex: 1; padding: 0 8px; font-size: 14px; }
+    button.edit-all {
+      height: 32px;
+      padding: 0 12px;
+      background: none;
+      color: var(--accent);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    button.edit-all:hover { background: #e8f1ff; opacity: 1; }
     button.mark-all {
       height: 32px;
       padding: 0 12px;
@@ -745,6 +759,16 @@
       </div>
 
       <form id="entry-form">
+        <fieldset id="scope-field" class="scope-field" hidden>
+          <legend>Apply changes to</legend>
+          <div class="segmented-pill scope-types" role="group" aria-label="Which entries to change">
+            <button type="button" data-scope="one" aria-pressed="true">Only this one</button>
+            <button type="button" data-scope="later" aria-pressed="false">This and later</button>
+            <button type="button" data-scope="all" aria-pressed="false" id="scope-all">All</button>
+          </div>
+          <p class="hint" id="scope-hint"></p>
+        </fieldset>
+
         <div class="segmented" role="group" aria-label="Entry type">
           <button type="button" id="type-income" aria-pressed="true">Money in</button>
           <button type="button" id="type-cost" aria-pressed="false">Money out</button>
