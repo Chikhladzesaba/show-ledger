@@ -299,6 +299,13 @@
     .add-channel input { flex: 1; }
     .channel-tag { display: inline-block; font-size: 12px; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; margin-right: 6px; }
 
+    /* ===== People and hours ===== */
+    .people-fields { display: flex; flex-direction: column; gap: 14px; padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg); }
+    .pay-types { display: flex; width: 100%; }
+    .pay-types button { flex: 1; }
+    #team-list { overflow-x: auto; }
+    #team-list table { min-width: 520px; }
+
     /* ===== Forecast ===== */
     .small-inline { font-size: 13px; }
     .forecast-stats { display: flex; flex-wrap: wrap; gap: 12px 40px; margin-bottom: 12px; }
@@ -646,6 +653,14 @@
       </section>
     </div>
 
+    <section class="card" id="team-card" hidden>
+      <div class="card-head">
+        <h2 id="team-title">Team hours</h2>
+      </div>
+      <div id="team-list"></div>
+      <p class="hint" id="team-note"></p>
+    </section>
+
     <section class="card forecast" id="forecast">
       <div class="card-head">
         <h2 id="forecast-title">Next month</h2>
@@ -776,6 +791,32 @@
           <datalist id="brand-list"></datalist>
           <span class="hint">Past brands are suggested, so totals stay together.</span>
         </label>
+
+        <div class="people-fields" id="people-fields" hidden>
+          <label class="field">
+            Person (optional)
+            <input type="text" id="entry-person" list="people-list" autocomplete="off" placeholder="Their name">
+            <datalist id="people-list"></datalist>
+          </label>
+          <fieldset>
+            <legend>How are they paid?</legend>
+            <div class="segmented-pill pay-types" role="group" aria-label="How they are paid">
+              <button type="button" data-pay="fixed" aria-pressed="true">Fixed amount</button>
+              <button type="button" data-pay="hourly" aria-pressed="false">By the hour</button>
+            </div>
+          </fieldset>
+          <div class="row">
+            <label class="field">
+              Hours worked
+              <input type="number" id="entry-hours" min="0" step="0.5" placeholder="e.g. 32">
+            </label>
+            <label class="field" id="hour-rate-field" hidden>
+              Rate per hour
+              <input type="number" id="entry-hour-rate" min="0" step="0.01" placeholder="e.g. 25">
+            </label>
+          </div>
+          <p class="hint" id="hours-hint"></p>
+        </div>
 
         <label class="field">
           Note (optional)
