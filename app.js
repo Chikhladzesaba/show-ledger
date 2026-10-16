@@ -163,13 +163,14 @@ function loadData() {
         }
         if (e.subtype === undefined) e.subtype = '';
         if (e.brand === undefined) e.brand = '';
+        if (!e.status) e.status = 'paid';
       });
-      return { entries: entries };
+      return { entries: entries, series: parsed.series || [] };
     }
   } catch (error) {
     console.error('Could not load saved data:', error);
   }
-  return { entries: [] };
+  return { entries: [], series: [] };
 }
 
 function saveData() {
@@ -244,10 +245,71 @@ function amountIn(entry, months) {
 }
 
 // Total of one type ('income' or 'cost') inside a list of months
+// Expected payments are shown separately; totals count paid money only
+function isPaid(entry) {
+  return entry.status !== 'expected';
+}
+
 function totalIn(type, months) {
   return data.entries
-    .filter(e => e.type === type)
+    .filter(e => e.type === type && isPaid(e))
     .reduce((sum, e) => sum + amountIn(e, months), 0);
+}
+
+// This month as '2026-10'
+function todayKey() {
+  const now = new Date();
+  return monthKey(now.getFullYear(), now.getMonth() + 1);
+}
+
+// '2026-11' + 2 -> '2027-01'
+function addMonths(key, n) {
+  const [year, month] = key.split('-').map(Number);
+  const total = year * 12 + (month - 1) + n;
+  return monthKey(Math.floor(total / 12), (total % 12) + 1);
+}
+
+// The last month an entry covers (a quarter entry for Q3 ends in Sep)
+function lastMonth(entry) {
+  return entryMonths(entry).pop();
+}
+
+// Expected, and its period is already over
+function isOverdue(entry) {
+  return entry.status === 'expected' && lastMonth(entry) < todayKey();
+}
+
+// ===== Recurring entries =====
+// A series remembers the details; each month up to now gets its own entry.
+// Copies arrive as Expected, so the creator confirms them with "Mark paid".
+
+function generateRecurring() {
+  const now = todayKey();
+  let added = 0;
+  for (const s of data.series) {
+    const last = s.end && s.end < now ? s.end : now;
+    for (let month = addMonths(s.start, 1); month <= last; month = addMonths(month, 1)) {
+      const exists = data.entries.some(e => e.seriesId === s.id && e.month === month);
+      if (exists || s.skipped.includes(month)) continue;
+      data.entries.push({
+        id: newId(), type: s.type, amount: s.amount, month: month, span: 1,
+        category: s.category, subtype: s.subtype, brand: s.brand, note: s.note,
+        status: 'expected', seriesId: s.id, episodeId: ''
+      });
+      added++;
+    }
+  }
+  if (added > 0) saveData();
+}
+
+function findSeries(entry) {
+  return entry.seriesId ? data.series.find(s => s.id === entry.seriesId) : null;
+}
+
+// Still repeating after this entry's month?
+function repeatsAfter(entry) {
+  const s = findSeries(entry);
+  return Boolean(s && (!s.end || s.end > entry.month));
 }
 
 // 'Sep 2026', 'Q3 2026' or '2026 · full year'
@@ -264,6 +326,7 @@ function formatEntryPeriod(entry) {
 const PERIOD_SIZE = { month: 1, quarter: 3, year: 12 };
 
 let periodType = 'quarter';    // 'month', 'quarter' or 'year'
+let showPendingOnly = false;   // true after "Show pending": the list shows all pending entries
 let anchor = latestAnchor();   // the month the view is centred on
 
 // Start at the latest month that has entries (or this month if none)
@@ -385,16 +448,19 @@ document.querySelector('.period-types').addEventListener('click', function (even
   const type = event.target.dataset.type;
   if (!type) return;
   periodType = type;
+  showPendingOnly = false;
   renderAll();
 });
 
 document.getElementById('period-prev').addEventListener('click', function () {
   anchor = shiftAnchor(periodType, anchor, -1);
+  showPendingOnly = false;
   renderAll();
 });
 
 document.getElementById('period-next').addEventListener('click', function () {
   anchor = shiftAnchor(periodType, anchor, 1);
+  showPendingOnly = false;
   renderAll();
 });
 
@@ -441,6 +507,7 @@ document.getElementById('month-chart').addEventListener('click', function (event
   const [year, month] = column.dataset.month.split('-');
   anchor = { year: Number(year), month: Number(month) };
   periodType = 'month';
+  showPendingOnly = false;
   renderAll();
 });
 
@@ -449,7 +516,7 @@ document.getElementById('month-chart').addEventListener('click', function (event
 function groupByCategory(type, months) {
   const groups = {};
   for (const entry of data.entries) {
-    if (entry.type !== type) continue;
+    if (entry.type !== type || !isPaid(entry)) continue;
     const amount = amountIn(entry, months);
     if (amount === 0) continue;
     if (!groups[entry.category]) groups[entry.category] = { total: 0, subs: {} };
@@ -515,8 +582,10 @@ let entryType = 'income';                 // 'income' or 'cost'
 let selectedCategory = 'Platform revenue';
 let selectedSub = 'YouTube';              // '' = none picked
 let entrySpan = 1;                        // 1 = a month, 3 = a quarter, 12 = a year
+let entryStatus = 'paid';                 // 'paid' or 'expected'
 let editingId = null;                     // the id of the entry being edited, or null when adding
 let beforeEdit = null;                    // the form choices to bring back after editing
+let repeatsWhenOpened = false;            // the "Repeats" box when the edit started
 
 function currentChoices() {
   return entryType === 'income' ? INCOME_STREAMS : COST_CATEGORIES;
@@ -564,6 +633,7 @@ function renderTypeToggle() {
   document.getElementById('save-entry').textContent = editingId ? 'Save changes' : (isIncome ? 'Save income' : 'Save cost');
   document.getElementById('drawer-title').textContent = editingId ? 'Edit entry' : 'Add entry';
   document.getElementById('other-name').placeholder = isIncome ? 'e.g. Grant, Prize, Licensing' : 'e.g. Insurance, Accounting, Bank fees';
+  renderStatus();
 }
 
 // Draw the stream chips, the explanation line and "Name it" for Other
@@ -628,6 +698,28 @@ function renderSpan() {
   document.getElementById('month-field').hidden = entrySpan !== 1;
   document.getElementById('quarter-field').hidden = entrySpan !== 3;
   renderSpreadHint();
+  renderStatus();
+}
+
+// Paid / Expected switch and the "Repeats every month" row
+function renderStatus() {
+  const isIncome = entryType === 'income';
+  document.getElementById('status-legend').textContent = isIncome ? 'Has it arrived?' : 'Has it been paid?';
+  document.getElementById('status-paid').setAttribute('aria-pressed', String(entryStatus === 'paid'));
+  document.getElementById('status-expected').setAttribute('aria-pressed', String(entryStatus === 'expected'));
+  document.getElementById('status-expected').textContent = isIncome ? 'Expected' : 'To pay';
+
+  // Only single months can repeat
+  const row = document.getElementById('repeat-row');
+  const box = document.getElementById('entry-repeats');
+  row.hidden = entrySpan !== 1;
+  if (entrySpan !== 1) box.checked = false;
+
+  const hint = document.getElementById('repeat-hint');
+  hint.hidden = !box.checked;
+  hint.textContent = editingId
+    ? 'Changes also apply to future monthly copies. Untick to stop after this month.'
+    : 'Each new month a copy is added as Expected. Confirm it with Mark paid.';
 }
 
 function renderSpreadHint() {
@@ -689,6 +781,16 @@ document.querySelector('.span-types').addEventListener('click', function (event)
 
 document.getElementById('entry-amount').addEventListener('input', renderSpreadHint);
 
+document.getElementById('status-paid').addEventListener('click', function () {
+  entryStatus = 'paid';
+  renderStatus();
+});
+document.getElementById('status-expected').addEventListener('click', function () {
+  entryStatus = 'expected';
+  renderStatus();
+});
+document.getElementById('entry-repeats').addEventListener('change', renderStatus);
+
 // Open and close the drawer
 const drawer = document.getElementById('entry-drawer');
 
@@ -703,6 +805,7 @@ function showDrawer() {
 function clearEntryFields() {
   ['entry-amount', 'entry-note', 'other-name', 'sub-other-name', 'entry-brand']
     .forEach(id => { document.getElementById(id).value = ''; });
+  document.getElementById('entry-repeats').checked = false;
   renderSpreadHint();
 }
 
@@ -732,7 +835,7 @@ function ensureYearOption(year) {
 function openForEdit(entry) {
   // Remember the choices from before, to restore them when editing ends
   if (!editingId) {
-    beforeEdit = { entryType, selectedCategory, selectedSub, entrySpan };
+    beforeEdit = { entryType, selectedCategory, selectedSub, entrySpan, entryStatus };
   }
   editingId = entry.id;
   entryType = entry.type;
@@ -767,6 +870,11 @@ function openForEdit(entry) {
   document.getElementById('entry-brand').value = entry.brand || '';
   document.getElementById('entry-note').value = entry.note || '';
 
+  // Status and repeating
+  entryStatus = entry.status || 'paid';
+  repeatsWhenOpened = repeatsAfter(entry);
+  document.getElementById('entry-repeats').checked = repeatsWhenOpened;
+
   renderChips();
   renderSpan();
   renderTypeToggle();
@@ -787,6 +895,7 @@ drawer.addEventListener('close', function () {
       selectedCategory = beforeEdit.selectedCategory;
       selectedSub = beforeEdit.selectedSub;
       entrySpan = beforeEdit.entrySpan;
+      entryStatus = beforeEdit.entryStatus;
       beforeEdit = null;
     }
     renderChips();
@@ -828,18 +937,55 @@ document.getElementById('entry-form').addEventListener('submit', function (event
     category: category,
     subtype: subtype,
     brand: brand,
-    note: document.getElementById('entry-note').value.trim()
+    note: document.getElementById('entry-note').value.trim(),
+    status: entryStatus
+  };
+  const repeats = entrySpan === 1 && document.getElementById('entry-repeats').checked;
+
+  // The details a series copies into each new month
+  const template = () => ({
+    type: fields.type, amount: fields.amount, category: fields.category,
+    subtype: fields.subtype, brand: fields.brand, note: fields.note
+  });
+  const startSeries = entry => {
+    const s = Object.assign({ id: newId(), start: entry.month, end: '', skipped: [] }, template());
+    data.series.push(s);
+    entry.seriesId = s.id;
   };
 
   const wasEditing = Boolean(editingId);
   if (wasEditing) {
     // Change the existing entry, keep its id
     const entry = data.entries.find(e => e.id === editingId);
-    if (entry) Object.assign(entry, fields);
+    if (entry) {
+      const oldMonth = entry.month;
+      Object.assign(entry, fields);
+      const s = findSeries(entry);
+      if (s) {
+        // Moved to another month: don't let a copy reappear in the old one
+        if (oldMonth !== entry.month && !s.skipped.includes(oldMonth)) s.skipped.push(oldMonth);
+        if (repeats) {
+          // Future copies use the new details
+          Object.assign(s, template());
+          if (!repeatsWhenOpened) s.end = '';   // the box was just ticked: start repeating again
+        } else if (repeatsWhenOpened) {
+          // The box was just unticked: stop after this month,
+          // and remove copies after it that aren't paid yet
+          s.end = entry.month;
+          data.entries = data.entries.filter(e =>
+            !(e.seriesId === s.id && e.month > s.end && e.status === 'expected'));
+        }
+      } else if (repeats) {
+        startSeries(entry);
+      }
+    }
   } else {
-    data.entries.push(Object.assign({ id: newId(), episodeId: '' }, fields));
+    const entry = Object.assign({ id: newId(), episodeId: '' }, fields);
+    if (repeats) startSeries(entry);
+    data.entries.push(entry);
   }
 
+  generateRecurring();
   saveData();
 
   // Show the period this entry belongs to. If it covers more than the
@@ -863,7 +1009,9 @@ document.getElementById('entry-form').addEventListener('submit', function (event
   document.getElementById('other-name').value = '';
   document.getElementById('sub-other-name').value = '';
   document.getElementById('entry-brand').value = '';
+  document.getElementById('entry-repeats').checked = false;
   renderSpreadHint();
+  renderStatus();
   document.getElementById('entry-amount').focus();
 
   // A short "Saved" confirmation on the button
@@ -871,46 +1019,59 @@ document.getElementById('entry-form').addEventListener('submit', function (event
   setTimeout(renderTypeToggle, 1200);
 });
 
-// ===== The entries list (only the selected period) =====
+// ===== The entries list (the selected period, or all pending) =====
+
 
 function renderEntries() {
   const list = document.getElementById('entries-list');
   const label = periodLabel(periodType, anchor).main;
   const months = periodMonths(periodType, anchor);
 
-  document.getElementById('entries-title').textContent = `Entries · ${label}`;
+  document.getElementById('entries-title').textContent = showPendingOnly ? 'Pending payments' : `Entries · ${label}`;
+  document.getElementById('entries-back').hidden = !showPendingOnly;
 
   if (data.entries.length === 0) {
     list.innerHTML = '<p class="empty">No entries yet. Click "+ Add entry" to start.</p>';
     return;
   }
 
-  const inPeriod = data.entries
-    .filter(e => amountIn(e, months) > 0)
+  const shown = data.entries
+    .filter(e => showPendingOnly ? e.status === 'expected' : amountIn(e, months) > 0)
     .sort((a, b) => b.month.localeCompare(a.month));   // newest first
 
-  if (inPeriod.length === 0) {
-    list.innerHTML = `<p class="empty">No entries in ${label}.</p>`;
+  if (shown.length === 0) {
+    list.innerHTML = showPendingOnly
+      ? '<p class="empty">Nothing pending. Everything is paid.</p>'
+      : `<p class="empty">No entries in ${label}.</p>`;
     return;
   }
 
   let rows = '';
-  for (const entry of inPeriod) {
+  for (const entry of shown) {
     const isIncome = entry.type === 'income';
-    const part = amountIn(entry, months);
+    const expected = entry.status === 'expected';
+    const part = showPendingOnly ? entry.amount : amountIn(entry, months);
     const isPartial = Math.abs(part - entry.amount) > 0.005;
     const sign = isIncome ? '+' : '−';
     const details = [entry.brand ? `<strong>${escapeHtml(entry.brand)}</strong>` : '', escapeHtml(entry.note)]
       .filter(Boolean)
       .join(' · ');
+
+    let badges = `<span class="badge ${entry.type}">${isIncome ? 'Income' : 'Cost'}</span>`;
+    if (isOverdue(entry)) badges += '<span class="badge overdue">Overdue</span>';
+    else if (expected) badges += `<span class="badge expected">${isIncome ? 'Expected' : 'To pay'}</span>`;
+
+    const repeating = entry.seriesId ? '<span class="small">Repeats monthly</span>' : '';
+    const markPaid = expected ? `<button class="mark-paid" data-id="${entry.id}">Mark paid</button>` : '';
+
     rows += `
-      <tr data-id="${entry.id}">
+      <tr data-id="${entry.id}" class="${expected ? 'is-expected' : ''}">
         <td>${formatEntryPeriod(entry)}</td>
-        <td><span class="badge ${entry.type}">${isIncome ? 'Income' : 'Cost'}</span></td>
-        <td>${escapeHtml(formatCategory(entry))}</td>
+        <td>${badges}</td>
+        <td>${escapeHtml(formatCategory(entry))}${repeating}</td>
         <td class="muted">${details}</td>
         <td class="number ${isIncome ? 'money-in' : ''}">${sign}${formatUSD(part)}${isPartial ? `<span class="small">of ${formatUSD(entry.amount)}</span>` : ''}</td>
-        <td class="number row-actions"><button class="edit" data-id="${entry.id}">Edit</button><button class="delete" data-id="${entry.id}">Delete</button></td>
+        <td class="number row-actions">${markPaid}<button class="edit" data-id="${entry.id}">Edit</button><button class="delete" data-id="${entry.id}">Delete</button></td>
       </tr>`;
   }
 
@@ -936,10 +1097,22 @@ document.getElementById('entries-list').addEventListener('click', function (even
   const entry = data.entries.find(e => e.id === row.dataset.id);
   if (!entry) return;
 
+  // Mark paid: one tap confirms an expected payment
+  if (event.target.classList.contains('mark-paid')) {
+    entry.status = 'paid';
+    saveData();
+    renderAll();
+    return;
+  }
+
   // Delete button
   if (event.target.classList.contains('delete')) {
     const label = entry.type === 'income' ? 'income' : 'cost';
-    if (confirm(`Delete this ${formatUSD(entry.amount)} ${label} (${formatCategory(entry)}, ${formatEntryPeriod(entry)})? This cannot be undone.`)) {
+    const series = findSeries(entry);
+    const extra = series ? '\n\nOnly this month is deleted. To stop the monthly copies, edit an entry and untick "Repeats every month".' : '';
+    if (confirm(`Delete this ${formatUSD(entry.amount)} ${label} (${formatCategory(entry)}, ${formatEntryPeriod(entry)})? This cannot be undone.${extra}`)) {
+      // Don't let the monthly copy come back for this month
+      if (series && !series.skipped.includes(entry.month)) series.skipped.push(entry.month);
       data.entries = data.entries.filter(e => e.id !== entry.id);
       saveData();
       renderAll();
@@ -949,6 +1122,47 @@ document.getElementById('entries-list').addEventListener('click', function (even
 
   // Edit button, or a click anywhere else on the row
   openForEdit(entry);
+});
+
+document.getElementById('entries-back').addEventListener('click', function () {
+  showPendingOnly = false;
+  renderAll();
+});
+
+// ===== Pending bar: money still owed, and bills still to pay =====
+
+function renderPending() {
+  const pending = data.entries.filter(e => e.status === 'expected');
+  document.getElementById('pending').hidden = pending.length === 0;
+  if (pending.length === 0) {
+    showPendingOnly = false;
+    return;
+  }
+
+  const fill = (type, valueId, noteId) => {
+    const list = pending.filter(e => e.type === type);
+    const overdue = list.filter(isOverdue);
+    document.getElementById(valueId).textContent = formatUSD(list.reduce((sum, e) => sum + e.amount, 0));
+    const note = document.getElementById(noteId);
+    if (list.length === 0) {
+      note.textContent = 'Nothing pending';
+      note.className = 'pending-note';
+    } else if (overdue.length > 0) {
+      note.textContent = `${list.length} pending · ${overdue.length} overdue (${formatUSD(overdue.reduce((sum, e) => sum + e.amount, 0))})`;
+      note.className = 'pending-note overdue';
+    } else {
+      note.textContent = `${list.length} pending`;
+      note.className = 'pending-note';
+    }
+  };
+  fill('income', 'pending-in', 'pending-in-note');
+  fill('cost', 'pending-out', 'pending-out-note');
+}
+
+document.getElementById('pending-show').addEventListener('click', function () {
+  showPendingOnly = true;
+  renderEntries();
+  document.getElementById('entries-title').scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
 
 // ===== Welcome card: only before the first entry =====
@@ -962,11 +1176,13 @@ function renderWelcome() {
 function renderAll() {
   renderWelcome();
   renderOverview();
+  renderPending();
   renderChart();
   renderBreakdowns();
   renderEntries();
 }
 
+generateRecurring();
 fillPeriodSelects();
 setType('income');
 renderSpan();
