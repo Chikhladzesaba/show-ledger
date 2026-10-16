@@ -308,6 +308,33 @@
     #barter-list { overflow-x: auto; }
     #barter-list table { min-width: 520px; }
 
+    /* ===== Grouped rows (repeating entries) ===== */
+    tr.group-row { cursor: pointer; }
+    tr.group-row td { background: var(--bg); }
+    @media (hover: hover) {
+      tr.group-row:hover td { background: #eef5ff; }
+    }
+    tr.child-row td:first-child { padding-left: 28px; }
+    tr.child-row td { font-size: 14px; }
+    button.mark-all {
+      height: 32px;
+      padding: 0 12px;
+      background: none;
+      color: var(--good);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    button.mark-all:hover { background: #e7f5ec; opacity: 1; }
+    button.group-toggle {
+      height: 32px;
+      padding: 0 12px;
+      background: var(--surface);
+      color: var(--ink);
+      border: 1px solid var(--border);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
     /* ===== People and hours ===== */
     .people-fields { display: flex; flex-direction: column; gap: 14px; padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg); }
     .pay-types { display: flex; width: 100%; }
@@ -379,7 +406,10 @@
     .check input { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); }
     .row-actions { white-space: nowrap; }
     #entries-list tbody tr { cursor: pointer; }
-    #entries-list tbody tr:hover td { background: var(--bg); }
+    @media (hover: hover) {
+      #entries-list tbody tr:hover td { background: var(--bg); }
+    }
+    #entries-list td.number { white-space: nowrap; }
 
     /* ===== Welcome (first visit) ===== */
     .welcome h2 { font-size: 22px; margin-bottom: 8px; }
@@ -455,6 +485,10 @@
       #entries-list td:nth-child(4) { grid-column: 1 / -1; grid-row: 3; font-size: 14px; }
       #entries-list td:nth-child(4):empty { display: none; }
       #entries-list td:nth-child(6) { grid-column: 1 / -1; grid-row: 4; margin-left: -12px; }
+      #entries-list tbody tr.child-row { margin-left: 16px; padding-left: 12px; border-left: 2px solid var(--border); }
+      #entries-list tbody tr.group-row { background: var(--bg); border-radius: 10px; padding: 12px; margin: 6px 0; }
+      #entries-list tbody tr.group-row td { background: transparent; }
+      #entries-list tr.group-row td:nth-child(6) { margin-left: 0; }
     }
 
     /* ===== Add entry drawer ===== */
