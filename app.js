@@ -13,58 +13,127 @@ const INCOME_STREAMS = [
   {
     name: 'Platform revenue', required: true, subLabel: 'Which platform?',
     subs: ['YouTube', 'Facebook', 'Instagram', 'TikTok', 'Twitch', 'Other'],
-    hint: 'Money a platform pays you directly, like YouTube or Facebook monetization.'
+    hint: 'Money a platform pays you directly, like YouTube or Facebook monetization.',
+    note: 'e.g. September {sub} payout',
+    subOther: 'e.g. Kick, Snapchat, LinkedIn'
   },
   {
     name: 'Sponsorships', brand: true, subLabel: 'What kind of deal? (optional)',
     subs: ['Integration', 'Dedicated video', 'Product placement', 'Ambassador deal', 'Event / live', 'Other'],
-    hint: 'Brands paying you to feature them in your content.'
+    hint: 'Brands paying you to feature them in your content.',
+    note: 'e.g. Deal for episode 14',
+    subNotes: {
+      'Integration': 'e.g. 60-second mention in episode 14',
+      'Dedicated video': 'e.g. Review video, October',
+      'Product placement': 'e.g. Product on the desk in episode 14',
+      'Ambassador deal': 'e.g. 3-month deal, first payment',
+      'Event / live': 'e.g. Hosting a launch event'
+    },
+    subOther: 'e.g. Giveaway, Newsletter ad'
   },
   {
     name: 'Fan support', subLabel: 'From where? (optional)',
     subs: ['Patreon', 'Donations', 'Paid community', 'Other'],
-    hint: 'Money from your audience outside platform payouts.'
+    hint: 'Money from your audience outside platform payouts.',
+    note: 'e.g. Supporter payout, September',
+    subNotes: {
+      'Patreon': 'e.g. September Patreon payout',
+      'Donations': 'e.g. Donations from the live stream',
+      'Paid community': 'e.g. Members club, September'
+    },
+    subOther: 'e.g. Boosty, Buy Me a Coffee'
   },
   {
     name: 'Affiliate', subLabel: 'How? (optional)',
     subs: ['Affiliate links', 'Promo codes', 'Other'],
-    hint: 'Commission from your links and promo codes.'
+    hint: 'Commission from your links and promo codes.',
+    note: 'e.g. Commission for September',
+    subNotes: {
+      'Affiliate links': 'e.g. Gear links in video descriptions',
+      'Promo codes': 'e.g. Promo code from the October video'
+    },
+    subOther: 'e.g. Referral bonus'
   },
   {
     name: 'Products', subLabel: 'What did you sell? (optional)',
     subs: ['Merch', 'Courses', 'Digital products', 'Services', 'Other'],
-    hint: 'Things you sell: merch, courses, digital products, services.'
+    hint: 'Things you sell: merch, courses, digital products, services.',
+    note: 'e.g. Sales in September',
+    subNotes: {
+      'Merch': 'e.g. Hoodie drop',
+      'Courses': 'e.g. Editing course, 12 sales',
+      'Digital products': 'e.g. Preset pack',
+      'Services': 'e.g. Consulting for a brand'
+    },
+    subOther: 'e.g. Event tickets, Printed book'
   },
-  { name: 'Other', subs: [], hint: '' }
+  { name: 'Other', subs: [], hint: '', note: 'e.g. Workshop fee' }
 ];
 
 const COST_CATEGORIES = [
   {
     name: 'People', subLabel: 'Who? (optional)',
     subs: ['Editor', 'Host / guest fee', 'Camera / crew', 'Designer', 'Other'],
-    hint: 'Anyone you pay to make the content.'
+    hint: 'Anyone you pay to make the content.',
+    note: 'e.g. Fees for September',
+    subNotes: {
+      'Editor': 'e.g. Editing 4 episodes, September',
+      'Host / guest fee': 'e.g. Guest fee, episode 14',
+      'Camera / crew': 'e.g. Camera operator, 2 shoot days',
+      'Designer': 'e.g. Thumbnails for September'
+    },
+    subOther: 'e.g. Scriptwriter, Producer'
   },
   {
     name: 'Production', subLabel: 'What for? (optional)',
     subs: ['Studio / location', 'Props / set', 'Travel', 'Other'],
-    hint: 'Costs of shooting: places, sets, travel.'
+    hint: 'Costs of shooting: places, sets, travel.',
+    note: 'e.g. Shoot costs for episode 14',
+    subNotes: {
+      'Studio / location': 'e.g. Studio rent, 2 days',
+      'Props / set': 'e.g. New set decor',
+      'Travel': 'e.g. Taxi to the shoot'
+    },
+    subOther: 'e.g. Catering, Permits'
   },
   {
     name: 'Equipment', subLabel: 'What kind? (optional)',
     subs: ['Camera', 'Audio', 'Lighting', 'Computer', 'Other'],
-    hint: 'Gear you buy or rent.'
+    hint: 'Gear you buy or rent.',
+    note: 'e.g. New gear for the studio',
+    subNotes: {
+      'Camera': 'e.g. Second camera body',
+      'Audio': 'e.g. Two lapel mics',
+      'Lighting': 'e.g. LED panel kit',
+      'Computer': 'e.g. Editing laptop'
+    },
+    subOther: 'e.g. Tripods, Memory cards'
   },
   {
     name: 'Software & tools', subLabel: 'What kind? (optional)',
     subs: ['Editing software', 'Music / stock', 'Subscriptions', 'Other'],
-    hint: 'Apps, licences and monthly subscriptions.'
+    hint: 'Apps, licenses and monthly subscriptions.',
+    note: 'e.g. Tools for September',
+    subNotes: {
+      'Editing software': 'e.g. Editing app, yearly plan',
+      'Music / stock': 'e.g. Music library, monthly',
+      'Subscriptions': 'e.g. Cloud storage, monthly'
+    },
+    subOther: 'e.g. Scheduling tool'
   },
   {
     name: 'Promotion', subLabel: 'What kind? (optional)',
     subs: ['Paid ads', 'Boosted posts', 'Collaborations', 'Other'],
-    hint: 'Money spent to grow your audience.'
+    hint: 'Money spent to grow your audience.',
+    note: 'e.g. Ads for episode 14',
+    subNotes: {
+      'Paid ads': 'e.g. Instagram ads for episode 14',
+      'Boosted posts': 'e.g. Boosted trailer post',
+      'Collaborations': 'e.g. Shoutout from another creator'
+    },
+    subOther: 'e.g. Billboard, Flyers'
   },
-  { name: 'Other', subs: [], hint: '' }
+  { name: 'Other', subs: [], hint: '', note: 'e.g. Insurance' }
 ];
 
 // Old stream names from earlier versions -> the new stream and sub-type
@@ -74,25 +143,7 @@ const RENAMED_STREAMS = {
   'Memberships': { category: 'Fan support', subtype: '' },
   'Sponsorship': { category: 'Sponsorships', subtype: '' }
 };
-// Note examples that match what was picked ({sub} = the chosen platform)
-const NOTE_EXAMPLES = {
-  income: {
-    'Platform revenue': 'e.g. September {sub} payout',
-    'Sponsorships': 'e.g. Episode 14 integration',
-    'Fan support': 'e.g. Monthly Patreon payout',
-    'Affiliate': 'e.g. Promo code from the October video',
-    'Products': 'e.g. Hoodie drop',
-    'Other': 'e.g. Workshop fee'
-  },
-  cost: {
-    'People': 'e.g. Editor fee for September',
-    'Production': 'e.g. Studio rent, 2 days',
-    'Equipment': 'e.g. New microphone',
-    'Software & tools': 'e.g. Editing app, yearly plan',
-    'Promotion': 'e.g. Reels ads for episode 14',
-    'Other': 'e.g. Insurance'
-  }
-};
+
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 // ===== Saving and loading =====
@@ -507,7 +558,7 @@ function renderTypeToggle() {
   document.getElementById('type-cost').setAttribute('aria-pressed', String(!isIncome));
   document.getElementById('category-legend').textContent = isIncome ? 'Where did it come from?' : 'What was it for?';
   document.getElementById('save-entry').textContent = isIncome ? 'Save income' : 'Save cost';
-  document.getElementById('other-name').placeholder = isIncome ? 'e.g. Live event, Grant' : 'e.g. Studio rent, Insurance';
+  document.getElementById('other-name').placeholder = isIncome ? 'e.g. Grant, Prize, Licensing' : 'e.g. Insurance, Accounting, Bank fees';
 }
 
 // Draw the stream chips, the explanation line and "Name it" for Other
@@ -538,11 +589,14 @@ function renderSubChips() {
   document.getElementById('sub-other-field').hidden = selectedSub !== 'Other';
 
   document.getElementById('brand-field').hidden = !definition.brand;
-  
-  // The note example follows the stream (and the platform)
+
+  // The "Name it" example for a sub-type's Other
+  document.getElementById('sub-other-name').placeholder = definition.subOther || '';
+
+  // The note example follows the stream and the sub-type
   let platform = selectedSub && selectedSub !== 'Other' ? selectedSub : 'platform';
   if (platform === 'YouTube') platform = 'AdSense';
-  const example = NOTE_EXAMPLES[entryType][selectedCategory] || '';
+  const example = (definition.subNotes && definition.subNotes[selectedSub]) || definition.note || '';
   document.getElementById('entry-note').placeholder = example.replace('{sub}', platform);
 }
 
