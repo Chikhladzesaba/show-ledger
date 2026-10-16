@@ -299,6 +299,15 @@
     .add-channel input { flex: 1; }
     .channel-tag { display: inline-block; font-size: 12px; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; margin-right: 6px; }
 
+    /* ===== Barter ===== */
+    .payment-types, .valued-types { display: flex; width: 100%; }
+    .payment-types button, .valued-types button { flex: 1; }
+    .barter-fields { display: flex; flex-direction: column; gap: 14px; padding: 16px; border: 1px solid #ddd0f2; border-radius: 12px; background: #faf7ff; }
+    .tile-barter { font-size: 13px; color: #5b3a9e; }
+    .badge.barter { background: #f1eafd; color: #5b3a9e; }
+    #barter-list { overflow-x: auto; }
+    #barter-list table { min-width: 520px; }
+
     /* ===== People and hours ===== */
     .people-fields { display: flex; flex-direction: column; gap: 14px; padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg); }
     .pay-types { display: flex; width: 100%; }
@@ -607,9 +616,9 @@
     </div>
 
     <div class="tiles">
-      <div class="tile"><span class="tile-label">Income</span><span class="tile-value" id="tile-income">—</span><span class="tile-change" id="change-income"></span></div>
+      <div class="tile"><span class="tile-label">Income</span><span class="tile-value" id="tile-income">—</span><span class="tile-change" id="change-income"></span><span class="tile-barter" id="barter-income" hidden></span></div>
       <div class="tile"><span class="tile-label">Costs</span><span class="tile-value" id="tile-costs">—</span><span class="tile-change" id="change-costs"></span></div>
-      <div class="tile"><span class="tile-label">Profit</span><span class="tile-value" id="tile-profit">—</span><span class="tile-change" id="change-profit"></span></div>
+      <div class="tile"><span class="tile-label">Profit</span><span class="tile-value" id="tile-profit">—</span><span class="tile-change" id="change-profit"></span><span class="tile-barter" id="barter-profit" hidden></span></div>
       <div class="tile"><span class="tile-label" id="return-label">Return per $1 spent</span><span class="tile-value" id="tile-return">—</span><span class="tile-change" id="change-return"></span></div>
       <div class="tile" id="tax-tile" hidden><span class="tile-label" id="tax-label">Keep for taxes</span><span class="tile-value" id="tile-tax">—</span><span class="tile-change" id="tax-note"></span></div>
     </div>
@@ -652,6 +661,14 @@
         <div id="cost-breakdown"></div>
       </section>
     </div>
+
+    <section class="card" id="barter-card" hidden>
+      <div class="card-head">
+        <h2 id="barter-title">Barter</h2>
+        <span class="muted small-inline">Not counted in cash totals</span>
+      </div>
+      <div id="barter-list"></div>
+    </section>
 
     <section class="card" id="team-card" hidden>
       <div class="card-head">
@@ -699,9 +716,32 @@
           <button type="button" id="type-cost" aria-pressed="false">Money out</button>
         </div>
 
+        <fieldset>
+          <legend id="payment-legend">How were you paid?</legend>
+          <div class="segmented-pill payment-types" role="group" aria-label="Cash or barter">
+            <button type="button" data-payment="cash" aria-pressed="true">Cash</button>
+            <button type="button" data-payment="barter" aria-pressed="false">Barter</button>
+          </div>
+        </fieldset>
+
+        <div class="barter-fields" id="barter-fields" hidden>
+          <label class="field">
+            <span id="barter-item-label">What did you get?</span>
+            <input type="text" id="barter-item" placeholder="e.g. Phone for a review">
+          </label>
+          <fieldset>
+            <legend>How did you value it?</legend>
+            <div class="segmented-pill valued-types" role="group" aria-label="How the value was set">
+              <button type="button" data-valued="market" aria-pressed="true">Market price</button>
+              <button type="button" data-valued="rate" aria-pressed="false">Our usual rate</button>
+            </div>
+            <p class="hint" id="valued-hint"></p>
+          </fieldset>
+        </div>
+
         <div class="amount-row">
           <label class="field">
-            Amount
+            <span id="amount-label">Amount</span>
             <input type="number" id="entry-amount" class="amount-input" min="0" step="0.01" placeholder="0.00" required>
           </label>
           <div class="segmented-pill currency-types" role="group" aria-label="Currency">
@@ -865,6 +905,11 @@
             <option value="profit">profit</option>
           </select>
         </label>
+        <label class="check">
+          <input type="checkbox" id="tax-barter">
+          <span>Include barter value</span>
+        </label>
+        <p class="hint">Barter can be taxable even without money. Ask your accountant whether it applies to you.</p>
       </fieldset>
 
       <fieldset>
