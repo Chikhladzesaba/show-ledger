@@ -299,6 +299,65 @@
     .add-channel input { flex: 1; }
     .channel-tag { display: inline-block; font-size: 12px; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; margin-right: 6px; }
 
+    /* ===== Forecast ===== */
+    .small-inline { font-size: 13px; }
+    .forecast-stats { display: flex; flex-wrap: wrap; gap: 12px 40px; margin-bottom: 12px; }
+    .forecast-stats > div { display: flex; flex-direction: column; gap: 4px; }
+    .forecast-value { font-size: 24px; font-weight: 500; }
+    .forecast-typical { margin: 0 0 12px; font-size: 14px; color: var(--muted); }
+    .forecast-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+    .forecast-list li { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 15px; }
+    .forecast-list li:last-child { border-bottom: none; }
+    .forecast-list .tag { font-size: 12px; color: var(--muted); margin-left: 8px; }
+
+    /* ===== Summary ===== */
+    .summary-dialog {
+      width: min(860px, calc(100% - 32px));
+      max-height: calc(100% - 48px);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 0;
+      background: var(--surface);
+      color: var(--ink);
+      overflow-y: auto;
+    }
+    .summary-dialog::backdrop { background: rgba(26, 27, 34, 0.35); }
+    .summary-actions {
+      position: sticky; top: 0; z-index: 1;
+      display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+      padding: 14px 24px; background: var(--surface); border-bottom: 1px solid var(--line);
+    }
+    .summary-actions #close-summary { margin-left: auto; }
+    .copy-status { font-size: 13px; color: var(--good); }
+    #summary-content { padding: 28px 32px 36px; font-size: 14px; }
+    #summary-content h1 { font-size: 24px; font-weight: 500; margin: 0 0 4px; }
+    #summary-content h1 em { font-family: var(--serif); font-weight: 400; }
+    #summary-content h2 { font-size: 16px; font-weight: 600; margin: 24px 0 8px; }
+    #summary-content .meta { color: var(--muted); margin: 0 0 20px; }
+    #summary-content table { min-width: 0; font-size: 14px; }
+    #summary-content th, #summary-content td { padding: 6px 8px; }
+    .summary-totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    .summary-totals div { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+    .summary-totals span:first-child { font-size: 12px; color: var(--muted); }
+    .summary-totals span:last-child { font-size: 18px; font-weight: 500; }
+    .summary-foot { margin-top: 28px; font-size: 12px; color: var(--muted); }
+    #summary-content .group-table td:first-child { width: 60%; }
+
+    @media print {
+      @page { margin: 16mm; }
+      body.summary-open .page,
+      body.summary-open #entry-drawer,
+      body.summary-open #settings-drawer,
+      .summary-actions { display: none !important; }
+      body { background: #ffffff; }
+      .summary-dialog {
+        position: static; width: auto; max-width: none; max-height: none;
+        border: 0; border-radius: 0; overflow: visible;
+      }
+      .summary-dialog::backdrop { display: none; }
+      #summary-content { padding: 0; }
+    }
+
     /* ===== Checkbox row ===== */
     .check { display: flex; align-items: center; gap: 10px; font-size: 15px; color: var(--ink); cursor: pointer; margin-top: 4px; }
     .check input { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); }
@@ -337,6 +396,12 @@
       .header-actions .channel-switch { flex: 1; }
       .channel-switch select { width: 100%; min-width: 0; }
       .header-actions #open-settings { flex: 0 0 auto; }
+      .period-nav { flex-wrap: wrap; }
+      .period-nav #open-summary { flex: 1 1 100%; order: 3; }
+      .summary-totals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      #summary-content { padding: 20px 16px 28px; }
+      .forecast-stats { gap: 12px 24px; }
+      .forecast-value { font-size: 20px; }
       .period-bar { flex-direction: column; align-items: stretch; }
       .period-types { justify-content: space-between; }
       .period-types button { flex: 1; padding: 0 8px; }
@@ -530,6 +595,7 @@
         <button type="button" id="period-prev" class="icon-button" aria-label="Previous period">‹</button>
         <span class="period-label" id="period-label"></span>
         <button type="button" id="period-next" class="icon-button" aria-label="Next period">›</button>
+        <button type="button" id="open-summary" class="secondary">Summary</button>
       </div>
     </div>
 
@@ -538,6 +604,7 @@
       <div class="tile"><span class="tile-label">Costs</span><span class="tile-value" id="tile-costs">—</span><span class="tile-change" id="change-costs"></span></div>
       <div class="tile"><span class="tile-label">Profit</span><span class="tile-value" id="tile-profit">—</span><span class="tile-change" id="change-profit"></span></div>
       <div class="tile"><span class="tile-label" id="return-label">Return per $1 spent</span><span class="tile-value" id="tile-return">—</span><span class="tile-change" id="change-return"></span></div>
+      <div class="tile" id="tax-tile" hidden><span class="tile-label" id="tax-label">Keep for taxes</span><span class="tile-value" id="tile-tax">—</span><span class="tile-change" id="tax-note"></span></div>
     </div>
 
     <section id="pending" class="pending" hidden>
@@ -578,6 +645,20 @@
         <div id="cost-breakdown"></div>
       </section>
     </div>
+
+    <section class="card forecast" id="forecast">
+      <div class="card-head">
+        <h2 id="forecast-title">Next month</h2>
+        <span class="muted small-inline">Forecast</span>
+      </div>
+      <div class="forecast-stats">
+        <div><span class="tile-label">Expected income</span><span class="forecast-value" id="forecast-income">—</span></div>
+        <div><span class="tile-label">Expected costs</span><span class="forecast-value" id="forecast-costs">—</span></div>
+        <div><span class="tile-label">Expected profit</span><span class="forecast-value" id="forecast-profit">—</span></div>
+      </div>
+      <p class="forecast-typical" id="forecast-typical"></p>
+      <ul class="forecast-list" id="forecast-list"></ul>
+    </section>
 
     <section class="card">
       <div class="card-head entries-head">
@@ -732,6 +813,20 @@
       </fieldset>
 
       <fieldset>
+        <legend>Tax reserve</legend>
+        <p class="hint">How much to keep aside for taxes. Your accountant can tell you the right rate for you. Leave it at 0 to hide it.</p>
+        <label class="rate-line">
+          <span>Keep</span>
+          <input type="number" id="tax-rate" min="0" max="100" step="0.1" placeholder="0" aria-label="Tax reserve percent">
+          <span>% of</span>
+          <select id="tax-base" aria-label="Tax reserve is a share of">
+            <option value="income">income</option>
+            <option value="profit">profit</option>
+          </select>
+        </label>
+      </fieldset>
+
+      <fieldset>
         <legend>Channels</legend>
         <p class="hint">Add a channel or show to keep its numbers separate. With two or more, a switcher appears at the top.</p>
         <ul class="channel-list" id="channel-list"></ul>
@@ -741,6 +836,18 @@
         </div>
       </fieldset>
     </div>
+  </dialog>
+
+  <!-- Summary of the selected period: print, save as PDF or copy as text -->
+  <dialog id="summary-dialog" class="summary-dialog" aria-labelledby="summary-title">
+    <div class="summary-actions">
+      <button type="button" id="print-summary">Print or save as PDF</button>
+      <button type="button" id="copy-summary" class="secondary">Copy as text</button>
+      <span class="copy-status" id="copy-status" role="status"></span>
+      <button type="button" id="close-summary" class="secondary">Close</button>
+    </div>
+    <article id="summary-content"></article>
+    <textarea id="summary-text" class="visually-hidden" aria-hidden="true" tabindex="-1"></textarea>
   </dialog>
 
   <script src="app.js"></script>
