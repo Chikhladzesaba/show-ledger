@@ -312,9 +312,20 @@ function isPaid(entry) {
   return entry.status !== 'expected';
 }
 
+// Barter: goods or services instead of money, counted separately from cash
+function isBarter(entry) {
+  return entry.payment === 'barter';
+}
+
 function totalIn(type, months) {
   return visibleEntries()
-    .filter(e => e.type === type && isPaid(e))
+    .filter(e => e.type === type && isPaid(e) && !isBarter(e))
+    .reduce((sum, e) => sum + amountIn(e, months), 0);
+}
+
+function barterIn(type, months) {
+  return visibleEntries()
+    .filter(e => e.type === type && isPaid(e) && isBarter(e))
     .reduce((sum, e) => sum + amountIn(e, months), 0);
 }
 
@@ -358,6 +369,7 @@ function generateRecurring() {
         category: s.category, subtype: s.subtype, brand: s.brand, note: s.note,
         currency: s.currency || 'USD', gelPerUsd: s.gelPerUsd || 0, channelId: s.channelId,
         person: s.person || '', hours: s.hours || 0, payType: s.payType || '', hourlyRate: s.hourlyRate || 0,
+        payment: s.payment || 'cash', barterItem: s.barterItem || '', valuedBy: s.valuedBy || '',
         status: 'expected', seriesId: s.id, episodeId: ''
       });
       added++;
@@ -440,11 +452,16 @@ function periodLabel(type, a) {
 function totalsFor(months) {
   const income = totalIn('income', months);
   const costs = totalIn('cost', months);
+  const barterIncome = barterIn('income', months);
+  const barterCost = barterIn('cost', months);
   return {
     income: income,
     costs: costs,
     profit: income - costs,
-    ret: costs > 0 ? income / costs : null   // income per $1 spent
+    ret: costs > 0 ? income / costs : null,   // income per $1 spent
+    barterIncome: barterIncome,
+    barterCost: barterCost,
+    totalValue: income - costs + barterIncome - barterCost
   };
 }
 
@@ -509,6 +526,15 @@ function renderOverview() {
       `${arrow} ${currencySymbol()}${Math.abs(diff).toFixed(2)} vs ${prevName}`, trendClass(now.ret, before.ret));
   }
 
+  // Barter: shown under the cash tiles, never mixed into them
+  const barterLine = document.getElementById('barter-income');
+  const valueLine = document.getElementById('barter-profit');
+  const hasBarter = now.barterIncome > 0 || now.barterCost > 0;
+  barterLine.hidden = !(now.barterIncome > 0);
+  barterLine.textContent = `+ ${formatMain(now.barterIncome)} in barter`;
+  valueLine.hidden = !hasBarter;
+  valueLine.textContent = `Total value with barter: ${formatMoney(now.totalValue)}`;
+
   // Tax reserve: only shown when a percentage is set
   const rate = data.settings.taxRate || 0;
   document.getElementById('tax-tile').hidden = rate <= 0;
@@ -523,7 +549,10 @@ function renderOverview() {
 // How much to keep aside for taxes, from a period's totals
 function taxReserve(totals) {
   const rate = data.settings.taxRate || 0;
-  const base = data.settings.taxBase === 'profit' ? Math.max(totals.profit, 0) : totals.income;
+  const withBarter = data.settings.taxBarter;
+  const base = data.settings.taxBase === 'profit'
+    ? Math.max(withBarter ? totals.totalValue : totals.profit, 0)
+    : totals.income + (withBarter ? totals.barterIncome : 0);
   return base * rate / 100;
 }
 
@@ -599,7 +628,7 @@ document.getElementById('month-chart').addEventListener('click', function (event
 function groupByCategory(type, months) {
   const groups = {};
   for (const entry of visibleEntries()) {
-    if (entry.type !== type || !isPaid(entry)) continue;
+    if (entry.type !== type || !isPaid(entry) || isBarter(entry)) continue;
     const amount = amountIn(entry, months);
     if (amount === 0) continue;
     if (!groups[entry.category]) groups[entry.category] = { total: 0, subs: {} };
@@ -668,6 +697,8 @@ let entrySpan = 1;                        // 1 = a month, 3 = a quarter, 12 = a 
 let entryStatus = 'paid';                 // 'paid' or 'expected'
 let entryCurrency = 'USD';                // the currency this entry was paid in
 let entryPayType = 'fixed';               // People costs: 'fixed' or 'hourly'
+let entryPayment = 'cash';                // 'cash' or 'barter'
+let entryValued = 'market';               // barter value: 'market' price or our usual 'rate'
 let editingId = null;                     // the id of the entry being edited, or null when adding
 let beforeEdit = null;                    // the form choices to bring back after editing
 let repeatsWhenOpened = false;            // the "Repeats" box when the edit started
@@ -719,6 +750,7 @@ function renderTypeToggle() {
   document.getElementById('drawer-title').textContent = editingId ? 'Edit entry' : 'Add entry';
   document.getElementById('other-name').placeholder = isIncome ? 'e.g. Grant, Prize, Licensing' : 'e.g. Insurance, Accounting, Bank fees';
   renderStatus();
+  renderPayment();
 }
 
 // Draw the stream chips, the explanation line and "Name it" for Other
@@ -891,7 +923,7 @@ function showDrawer() {
 
 // Empty the fields that differ between entries
 function clearEntryFields() {
-  ['entry-amount', 'entry-note', 'other-name', 'sub-other-name', 'entry-brand', 'entry-person', 'entry-hours', 'entry-hour-rate']
+  ['entry-amount', 'entry-note', 'other-name', 'sub-other-name', 'entry-brand', 'entry-person', 'entry-hours', 'entry-hour-rate', 'barter-item']
     .forEach(id => { document.getElementById(id).value = ''; });
   document.getElementById('entry-repeats').checked = false;
   renderSpreadHint();
@@ -926,7 +958,7 @@ function ensureYearOption(year) {
 function openForEdit(entry) {
   // Remember the choices from before, to restore them when editing ends
   if (!editingId) {
-    beforeEdit = { entryType, selectedCategory, selectedSub, entrySpan, entryStatus, entryCurrency, entryPayType };
+    beforeEdit = { entryType, selectedCategory, selectedSub, entrySpan, entryStatus, entryCurrency, entryPayType, entryPayment, entryValued };
   }
   editingId = entry.id;
   entryType = entry.type;
@@ -960,6 +992,11 @@ function openForEdit(entry) {
   document.getElementById('entry-amount').value = entry.amount;
   document.getElementById('entry-brand').value = entry.brand || '';
   document.getElementById('entry-note').value = entry.note || '';
+
+  // Cash or barter
+  entryPayment = entry.payment === 'barter' ? 'barter' : 'cash';
+  entryValued = entry.valuedBy === 'rate' ? 'rate' : 'market';
+  document.getElementById('barter-item').value = entry.barterItem || '';
 
   // Person and hours (People costs)
   document.getElementById('entry-person').value = entry.person || '';
@@ -1001,6 +1038,8 @@ drawer.addEventListener('close', function () {
       entryStatus = beforeEdit.entryStatus;
       entryCurrency = beforeEdit.entryCurrency;
       entryPayType = beforeEdit.entryPayType;
+      entryPayment = beforeEdit.entryPayment;
+      entryValued = beforeEdit.entryValued;
       beforeEdit = null;
     }
     renderChips();
@@ -1062,7 +1101,10 @@ document.getElementById('entry-form').addEventListener('submit', function (event
     currency: entryCurrency,
     gelPerUsd: gelPerUsd,
     channelId: channelId,
-    ...peopleFieldsForSave()
+    ...peopleFieldsForSave(),
+    payment: entryPayment,
+    barterItem: entryPayment === 'barter' ? document.getElementById('barter-item').value.trim() : '',
+    valuedBy: entryPayment === 'barter' ? entryValued : ''
   };
   rememberPerson(fields);
   const repeats = entrySpan === 1 && document.getElementById('entry-repeats').checked;
@@ -1072,7 +1114,8 @@ document.getElementById('entry-form').addEventListener('submit', function (event
     type: fields.type, amount: fields.amount, category: fields.category,
     subtype: fields.subtype, brand: fields.brand, note: fields.note,
     currency: fields.currency, gelPerUsd: fields.gelPerUsd, channelId: fields.channelId,
-    person: fields.person, hours: fields.hours, payType: fields.payType, hourlyRate: fields.hourlyRate
+    person: fields.person, hours: fields.hours, payType: fields.payType, hourlyRate: fields.hourlyRate,
+    payment: fields.payment, barterItem: fields.barterItem, valuedBy: fields.valuedBy
   });
   const startSeries = entry => {
     const s = Object.assign({ id: newId(), start: entry.month, end: '', skipped: [] }, template());
@@ -1139,6 +1182,10 @@ document.getElementById('entry-form').addEventListener('submit', function (event
   ['entry-person', 'entry-hours', 'entry-hour-rate'].forEach(id => { document.getElementById(id).value = ''; });
   entryPayType = 'fixed';
   renderPeopleFields();
+  document.getElementById('barter-item').value = '';
+  entryPayment = 'cash';        // barter is the exception, so the next entry starts as cash
+  entryValued = 'market';
+  renderPayment();
   document.getElementById('entry-repeats').checked = false;
   renderSpreadHint();
   renderStatus();
@@ -1185,7 +1232,10 @@ function renderEntries() {
     const sign = isIncome ? '+' : '−';
     const showChannel = data.settings.activeChannel === 'all' && data.channels.length > 1;
     const channelTag = showChannel ? `<span class="channel-tag">${escapeHtml(channelName(entry.channelId))}</span>` : '';
-    const details = channelTag + [entry.brand ? `<strong>${escapeHtml(entry.brand)}</strong>` : '', peopleText(entry), escapeHtml(entry.note)]
+    const barterText = isBarter(entry) && entry.barterItem
+      ? `${escapeHtml(entry.barterItem)} (${entry.valuedBy === 'rate' ? 'our usual rate' : 'market price'})`
+      : '';
+    const details = channelTag + [entry.brand ? `<strong>${escapeHtml(entry.brand)}</strong>` : '', barterText, peopleText(entry), escapeHtml(entry.note)]
       .filter(Boolean)
       .join(' · ');
 
@@ -1195,11 +1245,12 @@ function renderEntries() {
       : '';
 
     let badges = `<span class="badge ${entry.type}">${isIncome ? 'Income' : 'Cost'}</span>`;
+    if (isBarter(entry)) badges += '<span class="badge barter">Barter</span>';
     if (isOverdue(entry)) badges += '<span class="badge overdue">Overdue</span>';
     else if (expected) badges += `<span class="badge expected">${isIncome ? 'Expected' : 'To pay'}</span>`;
 
     const repeating = entry.seriesId ? '<span class="small">Repeats monthly</span>' : '';
-    const markPaid = expected ? `<button class="mark-paid" data-id="${entry.id}">Mark paid</button>` : '';
+    const markPaid = expected ? `<button class="mark-paid" data-id="${entry.id}">${isBarter(entry) ? 'Mark received' : 'Mark paid'}</button>` : '';
 
     rows += `
       <tr data-id="${entry.id}" class="${expected ? 'is-expected' : ''}">
@@ -1269,7 +1320,7 @@ document.getElementById('entries-back').addEventListener('click', function () {
 // ===== Pending bar: money still owed, and bills still to pay =====
 
 function renderPending() {
-  const pending = visibleEntries().filter(e => e.status === 'expected');
+  const pending = visibleEntries().filter(e => e.status === 'expected' && !isBarter(e));
   document.getElementById('pending').hidden = pending.length === 0;
   if (pending.length === 0) {
     showPendingOnly = false;
@@ -1377,6 +1428,7 @@ function renderSettings() {
   document.getElementById('default-rate').value = data.settings.gelPerUsd || '';
   document.getElementById('tax-rate').value = data.settings.taxRate || '';
   document.getElementById('tax-base').value = data.settings.taxBase || 'income';
+  document.getElementById('tax-barter').checked = Boolean(data.settings.taxBarter);
   const hint = document.getElementById('default-rate-hint');
   hint.classList.remove('error');
   hint.textContent = 'Used for entries that have no rate of their own.';
@@ -1498,6 +1550,7 @@ function forecastFor(month) {
   const items = [];
   // Entries already in that month (paid early or expected)
   for (const e of visibleEntries()) {
+    if (isBarter(e)) continue;   // the forecast is about cash
     const part = amountIn(e, [month]);
     if (part > 0) items.push({ type: e.type, label: formatCategory(e), brand: e.brand, amount: part, tag: e.seriesId ? 'Repeats' : (e.status === 'expected' ? 'Expected' : 'Paid') });
   }
@@ -1556,7 +1609,7 @@ function buildSummary() {
   const reserve = taxReserve(totals);
   const income = groupByCategory('income', months);
   const costs = groupByCategory('cost', months);
-  const pending = visibleEntries().filter(e => e.status === 'expected');
+  const pending = visibleEntries().filter(e => e.status === 'expected' && !isBarter(e));
   const owed = pending.filter(e => e.type === 'income').reduce((t, e) => t + valueInMain(e), 0);
   const bills = pending.filter(e => e.type === 'cost').reduce((t, e) => t + valueInMain(e), 0);
   const entries = visibleEntries()
@@ -1573,6 +1626,11 @@ function buildSummary() {
   if (rate > 0) {
     totalCells.push([`Keep for taxes (${rate}% of ${data.settings.taxBase})`, formatMain(reserve)]);
     totalCells.push(['Profit after tax reserve', formatMoney(totals.profit - reserve)]);
+  }
+  if (totals.barterIncome || totals.barterCost) {
+    totalCells.push(['Barter received', formatMain(totals.barterIncome)]);
+    if (totals.barterCost) totalCells.push(['Barter given', formatMain(totals.barterCost)]);
+    totalCells.push(['Total value (cash + barter)', formatMoney(totals.totalValue)]);
   }
 
   const groupRows = (groups) => groups.length === 0
@@ -1600,6 +1658,7 @@ function buildSummary() {
     <table class="group-table"><tbody>${groupRows(income)}</tbody></table>
     <h2>Costs by category</h2>
     <table class="group-table"><tbody>${groupRows(costs)}</tbody></table>
+    ${barterSummary(months)}
     ${teamSummary(months)}
     <h2>Pending (all months)</h2>
     <table class="group-table"><tbody>
@@ -1865,6 +1924,84 @@ function teamSummary(months) {
     <table class="group-table"><tbody>${rows.map(r => `<tr><td>${escapeHtml(r.name)}${r.role && !r.name.startsWith(r.role) ? `<span class="small">${escapeHtml(r.role)}</span>` : ''}</td><td class="number">${r.hours ? (Math.round(r.hours * 10) / 10) + ' h' : '—'}</td><td class="number">${formatMain(r.cost)}</td></tr>`).join('')}</tbody></table>`;
 }
 
+// ===== Cash or barter (in the entry form) =====
+
+function renderPayment() {
+  const isIncome = entryType === 'income';
+  const barter = entryPayment === 'barter';
+  document.querySelectorAll('.payment-types button').forEach(button => {
+    button.setAttribute('aria-pressed', String(button.dataset.payment === entryPayment));
+  });
+  document.querySelectorAll('.valued-types button').forEach(button => {
+    button.setAttribute('aria-pressed', String(button.dataset.valued === entryValued));
+  });
+  document.getElementById('payment-legend').textContent = isIncome ? 'How were you paid?' : 'How did you pay?';
+  document.getElementById('barter-fields').hidden = !barter;
+  document.getElementById('amount-label').textContent = barter ? 'Estimated value' : 'Amount';
+  document.getElementById('barter-item-label').textContent = isIncome ? 'What did you get?' : 'What did you give?';
+  document.getElementById('barter-item').placeholder = isIncome ? 'e.g. Phone for a review' : 'e.g. A shoutout for the studio';
+  document.getElementById('valued-hint').textContent = entryValued === 'market'
+    ? (isIncome ? 'What it would cost to buy it yourself.' : 'What you would have paid in cash.')
+    : (isIncome ? 'What you would normally charge in cash for this work.' : 'What you would normally charge for what you gave.');
+}
+
+document.querySelector('.payment-types').addEventListener('click', function (event) {
+  const payment = event.target.dataset.payment;
+  if (!payment) return;
+  entryPayment = payment;
+  renderPayment();
+});
+document.querySelector('.valued-types').addEventListener('click', function (event) {
+  const valued = event.target.dataset.valued;
+  if (!valued) return;
+  entryValued = valued;
+  renderPayment();
+});
+
+document.getElementById('tax-barter').addEventListener('change', function (event) {
+  data.settings.taxBarter = event.target.checked;
+  saveData();
+  renderAll();
+});
+
+// ===== Barter card: what was received or given instead of money =====
+
+function barterRows(months) {
+  return visibleEntries()
+    .filter(e => isBarter(e) && amountIn(e, months) > 0)
+    .sort((a, b) => b.month.localeCompare(a.month));
+}
+
+function renderBarter() {
+  const months = periodMonths(periodType, anchor);
+  const rows = barterRows(months);
+  const card = document.getElementById('barter-card');
+  card.hidden = rows.length === 0;
+  if (card.hidden) return;
+  document.getElementById('barter-title').textContent = `Barter · ${periodLabel(periodType, anchor).main}`;
+  document.getElementById('barter-list').innerHTML = `
+    <table>
+      <thead><tr><th>For</th><th>What</th><th>From / to</th><th>Valued by</th><th class="number">Value</th></tr></thead>
+      <tbody>${rows.map(e => `
+        <tr>
+          <td>${formatEntryPeriod(e)}</td>
+          <td>${escapeHtml(e.barterItem || formatCategory(e))}<span class="small">${e.type === 'income' ? 'Received' : 'Given'} · ${escapeHtml(formatCategory(e))}${e.status === 'expected' ? ' · not received yet' : ''}</span></td>
+          <td>${escapeHtml(e.brand || e.person || '')}</td>
+          <td>${e.valuedBy === 'rate' ? 'Our usual rate' : 'Market price'}</td>
+          <td class="number">${e.type === 'income' ? '+' : '−'}${formatMain(amountIn(e, months))}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+function barterSummary(months) {
+  const rows = barterRows(months);
+  if (rows.length === 0) return '';
+  return `
+    <h2>Barter</h2>
+    <table class="group-table"><tbody>${rows.map(e => `<tr><td>${escapeHtml(e.barterItem || formatCategory(e))}<span class="small">${e.type === 'income' ? 'Received' : 'Given'}${e.brand ? ' · ' + escapeHtml(e.brand) : ''} · ${e.valuedBy === 'rate' ? 'our usual rate' : 'market price'}</span></td><td class="number">${formatEntryPeriod(e)}</td><td class="number">${formatMain(amountIn(e, months))}</td></tr>`).join('')}</tbody></table>`;
+}
+
 // ===== Welcome card: only before the first entry =====
 
 function renderWelcome() {
@@ -1878,6 +2015,7 @@ function renderAll() {
   renderWelcome();
   renderOverview();
   renderPending();
+  renderBarter();
   renderTeam();
   renderForecast();
   renderChart();
