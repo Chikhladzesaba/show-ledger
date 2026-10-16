@@ -74,7 +74,25 @@ const RENAMED_STREAMS = {
   'Memberships': { category: 'Fan support', subtype: '' },
   'Sponsorship': { category: 'Sponsorships', subtype: '' }
 };
-
+// Note examples that match what was picked ({sub} = the chosen platform)
+const NOTE_EXAMPLES = {
+  income: {
+    'Platform revenue': 'e.g. September {sub} payout',
+    'Sponsorships': 'e.g. Episode 14 integration',
+    'Fan support': 'e.g. Monthly Patreon payout',
+    'Affiliate': 'e.g. Promo code from the October video',
+    'Products': 'e.g. Hoodie drop',
+    'Other': 'e.g. Workshop fee'
+  },
+  cost: {
+    'People': 'e.g. Editor fee for September',
+    'Production': 'e.g. Studio rent, 2 days',
+    'Equipment': 'e.g. New microphone',
+    'Software & tools': 'e.g. Editing app, yearly plan',
+    'Promotion': 'e.g. Reels ads for episode 14',
+    'Other': 'e.g. Insurance'
+  }
+};
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 // ===== Saving and loading =====
@@ -489,7 +507,6 @@ function renderTypeToggle() {
   document.getElementById('type-cost').setAttribute('aria-pressed', String(!isIncome));
   document.getElementById('category-legend').textContent = isIncome ? 'Where did it come from?' : 'What was it for?';
   document.getElementById('save-entry').textContent = isIncome ? 'Save income' : 'Save cost';
-  document.getElementById('entry-note').placeholder = isIncome ? 'e.g. Episode 14 integration' : 'e.g. September edit';
   document.getElementById('other-name').placeholder = isIncome ? 'e.g. Live event, Grant' : 'e.g. Studio rent, Insurance';
 }
 
@@ -521,6 +538,12 @@ function renderSubChips() {
   document.getElementById('sub-other-field').hidden = selectedSub !== 'Other';
 
   document.getElementById('brand-field').hidden = !definition.brand;
+  
+  // The note example follows the stream (and the platform)
+  let platform = selectedSub && selectedSub !== 'Other' ? selectedSub : 'platform';
+  if (platform === 'YouTube') platform = 'AdSense';
+  const example = NOTE_EXAMPLES[entryType][selectedCategory] || '';
+  document.getElementById('entry-note').placeholder = example.replace('{sub}', platform);
 }
 
 // Suggest brands the creator has used before
