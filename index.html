@@ -274,6 +274,31 @@
     .pending-note.overdue { color: var(--danger); }
     .pending button { margin-left: auto; height: 40px; }
 
+    /* ===== Header actions ===== */
+    .header-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+    .channel-switch select { height: 44px; border-radius: 999px; padding: 0 16px; min-width: 170px; font-weight: 500; }
+    .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+    /* ===== Currency ===== */
+    .amount-row { display: flex; align-items: flex-end; gap: 10px; }
+    .amount-row .field { flex: 1; min-width: 0; }
+    .currency-types { flex-shrink: 0; height: 56px; align-items: center; }
+    .currency-types button { height: 46px; padding: 0 14px; }
+    .main-currency-types { display: flex; width: 100%; }
+    .main-currency-types button { flex: 1; }
+    .rate-line { display: flex; align-items: center; gap: 8px; font-size: 15px; color: var(--ink); }
+    .rate-line input { width: 120px; }
+    .hint.error { color: var(--danger); }
+
+    /* ===== Channels list (settings) ===== */
+    .channel-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+    .channel-list li { display: flex; gap: 8px; align-items: center; }
+    .channel-list input { flex: 1; }
+    .channel-list .count { font-size: 13px; color: var(--muted); white-space: nowrap; }
+    .add-channel { display: flex; gap: 8px; }
+    .add-channel input { flex: 1; }
+    .channel-tag { display: inline-block; font-size: 12px; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; margin-right: 6px; }
+
     /* ===== Checkbox row ===== */
     .check { display: flex; align-items: center; gap: 10px; font-size: 15px; color: var(--ink); cursor: pointer; margin-top: 4px; }
     .check input { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); }
@@ -307,7 +332,11 @@
       .brand { font-size: 22px; }
       .brand em { font-size: 26px; }
       .subtitle { font-size: 14px; }
-      header #open-entry { width: 100%; }
+      .header-actions { width: 100%; }
+      .header-actions #open-entry { flex: 1 1 100%; order: -1; }
+      .header-actions .channel-switch { flex: 1; }
+      .channel-switch select { width: 100%; min-width: 0; }
+      .header-actions #open-settings { flex: 0 0 auto; }
       .period-bar { flex-direction: column; align-items: stretch; }
       .period-types { justify-content: space-between; }
       .period-types button { flex: 1; padding: 0 8px; }
@@ -455,7 +484,14 @@
         <h1 class="brand">Show <em>Ledger</em></h1>
         <p class="subtitle">Your income and costs over time. Your numbers stay in this browser.</p>
       </div>
-      <button type="button" id="open-entry">+ Add entry</button>
+      <div class="header-actions">
+        <label class="channel-switch" id="channel-switch-wrap" hidden>
+          <span class="visually-hidden">Channel</span>
+          <select id="channel-switch" aria-label="Channel"></select>
+        </label>
+        <button type="button" id="open-settings" class="secondary">Settings</button>
+        <button type="button" id="open-entry">+ Add entry</button>
+      </div>
     </header>
 
     <section id="welcome" class="card welcome" hidden>
@@ -501,7 +537,7 @@
       <div class="tile"><span class="tile-label">Income</span><span class="tile-value" id="tile-income">—</span><span class="tile-change" id="change-income"></span></div>
       <div class="tile"><span class="tile-label">Costs</span><span class="tile-value" id="tile-costs">—</span><span class="tile-change" id="change-costs"></span></div>
       <div class="tile"><span class="tile-label">Profit</span><span class="tile-value" id="tile-profit">—</span><span class="tile-change" id="change-profit"></span></div>
-      <div class="tile"><span class="tile-label">Return per $1 spent</span><span class="tile-value" id="tile-return">—</span><span class="tile-change" id="change-return"></span></div>
+      <div class="tile"><span class="tile-label" id="return-label">Return per $1 spent</span><span class="tile-value" id="tile-return">—</span><span class="tile-change" id="change-return"></span></div>
     </div>
 
     <section id="pending" class="pending" hidden>
@@ -567,9 +603,28 @@
           <button type="button" id="type-cost" aria-pressed="false">Money out</button>
         </div>
 
-        <label class="field">
-          Amount (USD)
-          <input type="number" id="entry-amount" class="amount-input" min="0" step="0.01" placeholder="0.00" required>
+        <div class="amount-row">
+          <label class="field">
+            Amount
+            <input type="number" id="entry-amount" class="amount-input" min="0" step="0.01" placeholder="0.00" required>
+          </label>
+          <div class="segmented-pill currency-types" role="group" aria-label="Currency">
+            <button type="button" data-currency="USD" aria-pressed="true">USD</button>
+            <button type="button" data-currency="GEL" aria-pressed="false">GEL</button>
+          </div>
+        </div>
+        <div class="field" id="rate-field" hidden>
+          <label class="rate-line" for="entry-rate">
+            <span>1 USD =</span>
+            <input type="number" id="entry-rate" min="0" step="0.0001" placeholder="2.70">
+            <span>GEL</span>
+          </label>
+          <p class="hint" id="convert-hint"></p>
+        </div>
+
+        <label class="field" id="channel-field" hidden>
+          Channel
+          <select id="entry-channel"></select>
         </label>
 
         <fieldset>
@@ -650,6 +705,41 @@
           <button type="submit" id="save-entry">Save income</button>
         </div>
       </form>
+    </div>
+  </dialog>
+
+  <!-- Settings: main currency and channels -->
+  <dialog id="settings-drawer" class="drawer" aria-labelledby="settings-title">
+    <div class="drawer-inner">
+      <div class="drawer-head">
+        <h2 id="settings-title">Settings</h2>
+        <button type="button" id="close-settings" class="secondary">Close</button>
+      </div>
+
+      <fieldset>
+        <legend>Main currency</legend>
+        <div class="segmented-pill main-currency-types" role="group" aria-label="Main currency">
+          <button type="button" data-main="USD" aria-pressed="true">USD ($)</button>
+          <button type="button" data-main="GEL" aria-pressed="false">GEL (₾)</button>
+        </div>
+        <p class="hint">Tiles, chart and breakdowns are shown in this currency. Entries in another currency are converted with the rate typed for them.</p>
+        <label class="rate-line" for="default-rate">
+          <span>Usual rate: 1 USD =</span>
+          <input type="number" id="default-rate" min="0" step="0.0001" placeholder="2.70">
+          <span>GEL</span>
+        </label>
+        <p class="hint" id="default-rate-hint">Used for entries that have no rate of their own.</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Channels</legend>
+        <p class="hint">Add a channel or show to keep its numbers separate. With two or more, a switcher appears at the top.</p>
+        <ul class="channel-list" id="channel-list"></ul>
+        <div class="add-channel">
+          <input type="text" id="new-channel" placeholder="e.g. Second channel, Podcast" aria-label="New channel name">
+          <button type="button" id="add-channel" class="secondary">Add</button>
+        </div>
+      </fieldset>
     </div>
   </dialog>
 
