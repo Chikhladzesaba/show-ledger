@@ -701,6 +701,8 @@ let entryPayment = 'cash';                // 'cash' or 'barter'
 let entryValued = 'market';               // barter value: 'market' price or our usual 'rate'
 let editingId = null;                     // the id of the entry being edited, or null when adding
 let beforeEdit = null;                    // the form choices to bring back after editing
+let editGroupIds = [];                    // when editing inside a group: all entry ids of that group
+let editScope = 'one';                    // 'one', 'later' or 'all'
 let repeatsWhenOpened = false;            // the "Repeats" box when the edit started
 
 function currentChoices() {
@@ -746,7 +748,9 @@ function renderTypeToggle() {
   document.getElementById('type-income').setAttribute('aria-pressed', String(isIncome));
   document.getElementById('type-cost').setAttribute('aria-pressed', String(!isIncome));
   document.getElementById('category-legend').textContent = isIncome ? 'Where did it come from?' : 'What was it for?';
-  document.getElementById('save-entry').textContent = editingId ? 'Save changes' : (isIncome ? 'Save income' : 'Save cost');
+  document.getElementById('save-entry').textContent = editingId
+    ? (scopeTargets().length > 1 ? `Save changes to ${scopeTargets().length} entries` : 'Save changes')
+    : (isIncome ? 'Save income' : 'Save cost');
   document.getElementById('drawer-title').textContent = editingId ? 'Edit entry' : 'Add entry';
   document.getElementById('other-name').placeholder = isIncome ? 'e.g. Grant, Prize, Licensing' : 'e.g. Insurance, Accounting, Bank fees';
   renderStatus();
@@ -955,7 +959,10 @@ function ensureYearOption(year) {
 }
 
 // Open the drawer filled in with an existing entry
-function openForEdit(entry) {
+function openForEdit(entry, groupIds, scope) {
+  editGroupIds = groupIds && groupIds.length > 1 ? groupIds : [];
+  editScope = editGroupIds.length ? (scope || 'one') : 'one';
+
   // Remember the choices from before, to restore them when editing ends
   if (!editingId) {
     beforeEdit = { entryType, selectedCategory, selectedSub, entrySpan, entryStatus, entryCurrency, entryPayType, entryPayment, entryValued };
@@ -1018,6 +1025,7 @@ function openForEdit(entry) {
   renderChips();
   renderSpan();
   renderTypeToggle();
+  renderScope();
   showDrawer();
 }
 
@@ -1026,6 +1034,9 @@ document.getElementById('close-entry').addEventListener('click', () => drawer.cl
 // Runs for the Close button, the Escape key, and clicks outside the drawer
 drawer.addEventListener('close', function () {
   document.body.classList.remove('drawer-open');
+  editGroupIds = [];
+  editScope = 'one';
+  renderScope();
   // Leaving edit mode: the next "+ Add entry" starts clean
   if (editingId) {
     editingId = null;
@@ -1135,8 +1146,9 @@ document.getElementById('entry-form').addEventListener('submit', function (event
         // Moved to another month: don't let a copy reappear in the old one
         if (oldMonth !== entry.month && !s.skipped.includes(oldMonth)) s.skipped.push(oldMonth);
         if (repeats) {
-          // Future copies use the new details
-          Object.assign(s, template());
+          // Future copies use the new details, unless only this one entry was meant
+          const onlyThisOne = editGroupIds.length > 0 && editScope === 'one';
+          if (!onlyThisOne) Object.assign(s, template());
           if (!repeatsWhenOpened) s.end = '';   // the box was just ticked: start repeating again
         } else if (repeatsWhenOpened) {
           // The box was just unticked: stop after this month,
@@ -1153,6 +1165,18 @@ document.getElementById('entry-form').addEventListener('submit', function (event
     const entry = Object.assign({ id: newId(), episodeId: '' }, fields);
     if (repeats) startSeries(entry);
     data.entries.push(entry);
+  }
+
+  // Editing inside a group: copy the details to the other chosen entries.
+  // Each keeps its own month, period and Paid/Expected status.
+  if (wasEditing) {
+    const shared = ['type', 'amount', 'category', 'subtype', 'brand', 'note', 'currency', 'gelPerUsd',
+      'channelId', 'person', 'hours', 'payType', 'hourlyRate', 'payment', 'barterItem', 'valuedBy'];
+    for (const id of scopeTargets()) {
+      if (id === editingId) continue;
+      const other = data.entries.find(e => e.id === id);
+      if (other) shared.forEach(key => { other[key] = fields[key]; });
+    }
   }
 
   generateRecurring();
@@ -1308,7 +1332,7 @@ function groupRow(group, months) {
         <td>${escapeHtml(formatCategory(first))}<span class="small">${label}</span></td>
         <td class="muted">${who}</td>
         <td class="number ${isIncome ? 'money-in' : ''}"><strong>${isIncome ? '+' : '−'}${formatMain(total)}</strong></td>
-        <td class="number row-actions">${expected ? `<button type="button" class="mark-all" data-group="${group.key}">${isBarter(first) ? 'Mark all received' : 'Mark all paid'}</button>` : ''}<button type="button" class="group-toggle" aria-expanded="${open}">${open ? '▾ Hide' : `▸ Show ${count}`}</button></td>
+        <td class="number row-actions"><button type="button" class="edit-all">Edit all</button>${expected ? `<button type="button" class="mark-all" data-group="${group.key}">${isBarter(first) ? 'Mark all received' : 'Mark all paid'}</button>` : ''}<button type="button" class="group-toggle" aria-expanded="${open}">${open ? '▾ Hide' : `▸ Show ${count}`}</button></td>
       </tr>`;
 }
 
@@ -1378,6 +1402,14 @@ function toggleGroup(row) {
 document.getElementById('entries-list').addEventListener('click', function (event) {
   const groupRowEl = event.target.closest('tr.group-row');
   if (groupRowEl) {
+    // "Edit all": one drawer for every entry in this group
+    if (event.target.classList.contains('edit-all')) {
+      const ids = groupIdsOf(groupRowEl.dataset.group, groupRowEl.parentElement);
+      const latest = data.entries.filter(e => ids.includes(e.id)).sort((a, b) => b.month.localeCompare(a.month))[0];
+      if (latest) openForEdit(latest, ids, 'all');
+      return;
+    }
+
     // "Mark all paid": confirm every expected entry in this group at once
     if (event.target.classList.contains('mark-all')) {
       const ids = [...groupRowEl.parentElement.querySelectorAll(`tr[data-parent="${groupRowEl.dataset.group}"]`)].map(r => r.dataset.id);
@@ -1421,8 +1453,10 @@ document.getElementById('entries-list').addEventListener('click', function (even
     return;
   }
 
-  // Edit button, or a click anywhere else on the row
-  openForEdit(entry);
+  // Edit button, or a click anywhere else on the row.
+  // Inside a group, the drawer asks whether to change only this one or more.
+  const parent = row.dataset.parent;
+  openForEdit(entry, parent ? groupIdsOf(parent, row.parentElement) : [], 'one');
 });
 
 document.getElementById('entries-back').addEventListener('click', function () {
@@ -2147,6 +2181,46 @@ function barterSummary(months) {
     <h2>Barter</h2>
     <table class="group-table"><tbody>${rows.map(e => `<tr><td>${escapeHtml(e.barterItem || formatCategory(e))}<span class="small">${e.type === 'income' ? 'Received' : 'Given'}${e.brand ? ' · ' + escapeHtml(e.brand) : ''} · ${e.valuedBy === 'rate' ? 'our usual rate' : 'market price'}</span></td><td class="number">${formatEntryPeriod(e)}</td><td class="number">${formatMain(amountIn(e, months))}</td></tr>`).join('')}</tbody></table>`;
 }
+
+// ===== Editing a whole group =====
+
+// The entry ids inside a group, read from the rows on screen
+function groupIdsOf(key, tbody) {
+  return [...tbody.querySelectorAll(`tr[data-parent="${key}"]`)].map(r => r.dataset.id);
+}
+
+// Which entries a save will change
+function scopeTargets() {
+  if (!editingId || editGroupIds.length === 0 || editScope === 'one') return editingId ? [editingId] : [];
+  if (editScope === 'all') return editGroupIds;
+  const current = data.entries.find(e => e.id === editingId);
+  return editGroupIds.filter(id => {
+    const e = data.entries.find(x => x.id === id);
+    return e && current && e.month >= current.month;
+  });
+}
+
+function renderScope() {
+  const field = document.getElementById('scope-field');
+  field.hidden = editGroupIds.length === 0;
+  if (field.hidden) return;
+  document.getElementById('scope-all').textContent = `All ${editGroupIds.length}`;
+  document.querySelectorAll('.scope-types button').forEach(button => {
+    button.setAttribute('aria-pressed', String(button.dataset.scope === editScope));
+  });
+  const count = scopeTargets().length;
+  document.getElementById('scope-hint').textContent = count > 1
+    ? `${count} entries will get these details. Each keeps its own month and Paid/Expected status.`
+    : 'Only this entry changes.';
+  renderTypeToggle();
+}
+
+document.querySelector('.scope-types').addEventListener('click', function (event) {
+  const scope = event.target.dataset.scope;
+  if (!scope) return;
+  editScope = scope;
+  renderScope();
+});
 
 // ===== Welcome card: only before the first entry =====
 
