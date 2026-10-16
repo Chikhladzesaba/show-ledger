@@ -272,7 +272,8 @@ function latestAnchor() {
   if (data.entries.length === 0) {
     return { year: now.getFullYear(), month: now.getMonth() + 1 };
   }
-  const latest = data.entries.flatMap(entryMonths).sort().pop();
+  // The newest starting month (a year entry starts in Jan, so it doesn't jump the view to Dec)
+  const latest = data.entries.map(e => e.month).sort().pop();
   const [year, month] = latest.split('-');
   return { year: Number(year), month: Number(month) };
 }
@@ -416,9 +417,10 @@ function renderChart() {
 
   // The tallest bar in the year gets the full height
   const max = Math.max(...months.map(m => Math.max(m.income, m.costs)), 0);
-  const height = value => (max > 0 ? Math.round(value / max * 160) : 0);
+  // Heights in % of the chart area, so bars fit on any screen size
+  const height = value => (max > 0 ? Math.round(value / max * 100) : 0);
   const bar = (value, kind) => value > 0
-    ? `<i class="${kind}" style="height: ${Math.max(height(value), 3)}px"></i>`
+    ? `<i class="${kind}" style="height: ${Math.max(height(value), 2)}%"></i>`
     : '<i class="none" style="height: 2px"></i>';
 
   document.getElementById('month-chart').innerHTML = months.map(m => {
@@ -513,6 +515,8 @@ let entryType = 'income';                 // 'income' or 'cost'
 let selectedCategory = 'Platform revenue';
 let selectedSub = 'YouTube';              // '' = none picked
 let entrySpan = 1;                        // 1 = a month, 3 = a quarter, 12 = a year
+let editingId = null;                     // the id of the entry being edited, or null when adding
+let beforeEdit = null;                    // the form choices to bring back after editing
 
 function currentChoices() {
   return entryType === 'income' ? INCOME_STREAMS : COST_CATEGORIES;
@@ -557,7 +561,8 @@ function renderTypeToggle() {
   document.getElementById('type-income').setAttribute('aria-pressed', String(isIncome));
   document.getElementById('type-cost').setAttribute('aria-pressed', String(!isIncome));
   document.getElementById('category-legend').textContent = isIncome ? 'Where did it come from?' : 'What was it for?';
-  document.getElementById('save-entry').textContent = isIncome ? 'Save income' : 'Save cost';
+  document.getElementById('save-entry').textContent = editingId ? 'Save changes' : (isIncome ? 'Save income' : 'Save cost');
+  document.getElementById('drawer-title').textContent = editingId ? 'Edit entry' : 'Add entry';
   document.getElementById('other-name').placeholder = isIncome ? 'e.g. Grant, Prize, Licensing' : 'e.g. Insurance, Accounting, Bank fees';
 }
 
@@ -687,18 +692,108 @@ document.getElementById('entry-amount').addEventListener('input', renderSpreadHi
 // Open and close the drawer
 const drawer = document.getElementById('entry-drawer');
 
-document.getElementById('open-entry').addEventListener('click', function () {
-  syncFormToView();
+function showDrawer() {
   renderBrandList();
   drawer.showModal();
   document.body.classList.add('drawer-open');
   document.getElementById('entry-amount').focus();
-});
+}
+
+// Empty the fields that differ between entries
+function clearEntryFields() {
+  ['entry-amount', 'entry-note', 'other-name', 'sub-other-name', 'entry-brand']
+    .forEach(id => { document.getElementById(id).value = ''; });
+  renderSpreadHint();
+}
+
+// "+ Add entry": a fresh form, pointed at the period on screen
+function openForNew() {
+  if (editingId) {
+    editingId = null;
+    clearEntryFields();
+  }
+  syncFormToView();
+  renderTypeToggle();
+  showDrawer();
+}
+
+document.getElementById('open-entry').addEventListener('click', openForNew);
+document.getElementById('welcome-start').addEventListener('click', openForNew);
+
+// Make sure a year exists in the Year dropdown (for old entries)
+function ensureYearOption(year) {
+  const select = document.getElementById('entry-year');
+  if (![...select.options].some(o => o.value === String(year))) {
+    select.add(new Option(String(year), String(year)));
+  }
+}
+
+// Open the drawer filled in with an existing entry
+function openForEdit(entry) {
+  // Remember the choices from before, to restore them when editing ends
+  if (!editingId) {
+    beforeEdit = { entryType, selectedCategory, selectedSub, entrySpan };
+  }
+  editingId = entry.id;
+  entryType = entry.type;
+
+  // Stream: a known one, or Other with the creator's own name
+  const known = currentChoices().find(c => c.name === entry.category && c.name !== 'Other');
+  selectedCategory = known ? known.name : 'Other';
+  document.getElementById('other-name').value = known || entry.category === 'Other' ? '' : entry.category;
+
+  // Sub-type: a known one, or Other with the creator's own name
+  const definition = currentDefinition();
+  document.getElementById('sub-other-name').value = '';
+  if (entry.subtype && definition.subs.includes(entry.subtype) && entry.subtype !== 'Other') {
+    selectedSub = entry.subtype;
+  } else if (entry.subtype && definition.subs.length > 0) {
+    selectedSub = 'Other';
+    document.getElementById('sub-other-name').value = entry.subtype === 'Other' ? '' : entry.subtype;
+  } else {
+    selectedSub = definition.required ? definition.subs[0] : '';
+  }
+
+  // Period
+  const [year, month] = entry.month.split('-').map(Number);
+  entrySpan = entry.span || 1;
+  ensureYearOption(year);
+  document.getElementById('entry-year').value = String(year);
+  document.getElementById('entry-month').value = String(month);
+  document.getElementById('entry-quarter').value = String(Math.ceil(month / 3));
+
+  // Amount, brand, note
+  document.getElementById('entry-amount').value = entry.amount;
+  document.getElementById('entry-brand').value = entry.brand || '';
+  document.getElementById('entry-note').value = entry.note || '';
+
+  renderChips();
+  renderSpan();
+  renderTypeToggle();
+  showDrawer();
+}
 
 document.getElementById('close-entry').addEventListener('click', () => drawer.close());
 
 // Runs for the Close button, the Escape key, and clicks outside the drawer
-drawer.addEventListener('close', () => document.body.classList.remove('drawer-open'));
+drawer.addEventListener('close', function () {
+  document.body.classList.remove('drawer-open');
+  // Leaving edit mode: the next "+ Add entry" starts clean
+  if (editingId) {
+    editingId = null;
+    clearEntryFields();
+    if (beforeEdit) {
+      entryType = beforeEdit.entryType;
+      selectedCategory = beforeEdit.selectedCategory;
+      selectedSub = beforeEdit.selectedSub;
+      entrySpan = beforeEdit.entrySpan;
+      beforeEdit = null;
+    }
+    renderChips();
+    renderSpan();
+    renderTypeToggle();
+  }
+});
 drawer.addEventListener('click', function (event) {
   if (event.target === drawer) drawer.close();   // click on the dimmed area
 });
@@ -725,8 +820,7 @@ document.getElementById('entry-form').addEventListener('submit', function (event
   const typedBrand = document.getElementById('entry-brand').value.trim();
   const brand = definition.brand && typedBrand ? matchBrand(typedBrand) : '';
 
-  data.entries.push({
-    id: newId(),
+  const fields = {
     type: entryType,
     amount: amount,
     month: monthKey(year, firstMonth),
@@ -734,9 +828,17 @@ document.getElementById('entry-form').addEventListener('submit', function (event
     category: category,
     subtype: subtype,
     brand: brand,
-    note: document.getElementById('entry-note').value.trim(),
-    episodeId: ''
-  });
+    note: document.getElementById('entry-note').value.trim()
+  };
+
+  const wasEditing = Boolean(editingId);
+  if (wasEditing) {
+    // Change the existing entry, keep its id
+    const entry = data.entries.find(e => e.id === editingId);
+    if (entry) Object.assign(entry, fields);
+  } else {
+    data.entries.push(Object.assign({ id: newId(), episodeId: '' }, fields));
+  }
 
   saveData();
 
@@ -748,6 +850,12 @@ document.getElementById('entry-form').addEventListener('submit', function (event
   }
   renderAll();
   renderBrandList();
+
+  // After an edit, close the drawer: the change is done
+  if (wasEditing) {
+    drawer.close();
+    return;
+  }
 
   // Clear only what changes between entries; keep period, type and stream
   document.getElementById('entry-amount').value = '';
@@ -796,13 +904,13 @@ function renderEntries() {
       .filter(Boolean)
       .join(' · ');
     rows += `
-      <tr>
+      <tr data-id="${entry.id}">
         <td>${formatEntryPeriod(entry)}</td>
         <td><span class="badge ${entry.type}">${isIncome ? 'Income' : 'Cost'}</span></td>
         <td>${escapeHtml(formatCategory(entry))}</td>
         <td class="muted">${details}</td>
         <td class="number ${isIncome ? 'money-in' : ''}">${sign}${formatUSD(part)}${isPartial ? `<span class="small">of ${formatUSD(entry.amount)}</span>` : ''}</td>
-        <td class="number"><button class="delete" data-id="${entry.id}">Delete</button></td>
+        <td class="number row-actions"><button class="edit" data-id="${entry.id}">Edit</button><button class="delete" data-id="${entry.id}">Delete</button></td>
       </tr>`;
   }
 
@@ -823,22 +931,36 @@ function renderEntries() {
 }
 
 document.getElementById('entries-list').addEventListener('click', function (event) {
-  if (!event.target.classList.contains('delete')) return;
-
-  const entry = data.entries.find(e => e.id === event.target.dataset.id);
+  const row = event.target.closest('tr[data-id]');
+  if (!row) return;
+  const entry = data.entries.find(e => e.id === row.dataset.id);
   if (!entry) return;
 
-  const label = entry.type === 'income' ? 'income' : 'cost';
-  if (confirm(`Delete this ${formatUSD(entry.amount)} ${label} (${formatCategory(entry)}, ${formatEntryPeriod(entry)})? This cannot be undone.`)) {
-    data.entries = data.entries.filter(e => e.id !== entry.id);
-    saveData();
-    renderAll();
+  // Delete button
+  if (event.target.classList.contains('delete')) {
+    const label = entry.type === 'income' ? 'income' : 'cost';
+    if (confirm(`Delete this ${formatUSD(entry.amount)} ${label} (${formatCategory(entry)}, ${formatEntryPeriod(entry)})? This cannot be undone.`)) {
+      data.entries = data.entries.filter(e => e.id !== entry.id);
+      saveData();
+      renderAll();
+    }
+    return;
   }
+
+  // Edit button, or a click anywhere else on the row
+  openForEdit(entry);
 });
+
+// ===== Welcome card: only before the first entry =====
+
+function renderWelcome() {
+  document.getElementById('welcome').hidden = data.entries.length > 0;
+}
 
 // ===== Start =====
 
 function renderAll() {
+  renderWelcome();
   renderOverview();
   renderChart();
   renderBreakdowns();
