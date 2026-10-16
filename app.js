@@ -1,11 +1,80 @@
-// Show Ledger v1.2 — money over time
+// Show Ledger v1.3 — money over time
 // Every entry is money in or money out, for a month, a quarter or a year.
 // Quarter and year entries are spread evenly across their months.
+// Each entry has a stream (or cost category), and optionally a sub-type.
 
 const STORAGE_KEY = 'showLedgerV2';
 
-const INCOME_STREAMS = ['Sponsorship', 'Ad revenue', 'Memberships', 'Affiliate', 'Other'];
-const COST_CATEGORIES = ['People', 'Production', 'Equipment', 'Promotion', 'Other'];
+// ===== Streams, categories and their sub-types =====
+// required: true  -> a sub-type must be picked (the first one is pre-selected)
+// brand: true     -> the form also asks for a brand name
+
+const INCOME_STREAMS = [
+  {
+    name: 'Platform revenue', required: true, subLabel: 'Which platform?',
+    subs: ['YouTube', 'Facebook', 'Instagram', 'TikTok', 'Twitch', 'Other'],
+    hint: 'Money a platform pays you directly, like YouTube or Facebook monetization.'
+  },
+  {
+    name: 'Sponsorships', brand: true, subLabel: 'What kind of deal? (optional)',
+    subs: ['Integration', 'Dedicated video', 'Product placement', 'Ambassador deal', 'Event / live', 'Other'],
+    hint: 'Brands paying you to feature them in your content.'
+  },
+  {
+    name: 'Fan support', subLabel: 'From where? (optional)',
+    subs: ['Patreon', 'Donations', 'Paid community', 'Other'],
+    hint: 'Money from your audience outside platform payouts.'
+  },
+  {
+    name: 'Affiliate', subLabel: 'How? (optional)',
+    subs: ['Affiliate links', 'Promo codes', 'Other'],
+    hint: 'Commission from your links and promo codes.'
+  },
+  {
+    name: 'Products', subLabel: 'What did you sell? (optional)',
+    subs: ['Merch', 'Courses', 'Digital products', 'Services', 'Other'],
+    hint: 'Things you sell: merch, courses, digital products, services.'
+  },
+  { name: 'Other', subs: [], hint: '' }
+];
+
+const COST_CATEGORIES = [
+  {
+    name: 'People', subLabel: 'Who? (optional)',
+    subs: ['Editor', 'Host / guest fee', 'Camera / crew', 'Designer', 'Other'],
+    hint: 'Anyone you pay to make the content.'
+  },
+  {
+    name: 'Production', subLabel: 'What for? (optional)',
+    subs: ['Studio / location', 'Props / set', 'Travel', 'Other'],
+    hint: 'Costs of shooting: places, sets, travel.'
+  },
+  {
+    name: 'Equipment', subLabel: 'What kind? (optional)',
+    subs: ['Camera', 'Audio', 'Lighting', 'Computer', 'Other'],
+    hint: 'Gear you buy or rent.'
+  },
+  {
+    name: 'Software & tools', subLabel: 'What kind? (optional)',
+    subs: ['Editing software', 'Music / stock', 'Subscriptions', 'Other'],
+    hint: 'Apps, licences and monthly subscriptions.'
+  },
+  {
+    name: 'Promotion', subLabel: 'What kind? (optional)',
+    subs: ['Paid ads', 'Boosted posts', 'Collaborations', 'Other'],
+    hint: 'Money spent to grow your audience.'
+  },
+  { name: 'Other', subs: [], hint: '' }
+];
+
+// Old stream names from earlier versions -> the new stream and sub-type
+const RENAMED_STREAMS = {
+  'Ad revenue': { category: 'Platform revenue', subtype: 'YouTube' },
+  'YouTube revenue': { category: 'Platform revenue', subtype: 'YouTube' },
+  'Memberships': { category: 'Fan support', subtype: '' },
+  'Sponsorship': { category: 'Sponsorships', subtype: '' }
+};
+
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 // ===== Saving and loading =====
@@ -15,7 +84,18 @@ function loadData() {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
-      return { entries: parsed.entries || [] };
+      const entries = parsed.entries || [];
+      // Move entries saved under old stream names to the new names
+      entries.forEach(e => {
+        const renamed = e.type === 'income' ? RENAMED_STREAMS[e.category] : null;
+        if (renamed) {
+          e.category = renamed.category;
+          if (!e.subtype) e.subtype = renamed.subtype;
+        }
+        if (e.subtype === undefined) e.subtype = '';
+        if (e.brand === undefined) e.brand = '';
+      });
+      return { entries: entries };
     }
   } catch (error) {
     console.error('Could not load saved data:', error);
@@ -68,6 +148,11 @@ function monthKey(year, month) {
 function formatMonth(key) {
   const [year, month] = key.split('-');
   return MONTH_NAMES[Number(month) - 1] + ' ' + year;
+}
+
+// 'Platform revenue · YouTube'
+function formatCategory(entry) {
+  return entry.subtype ? `${entry.category} · ${entry.subtype}` : entry.category;
 }
 
 // ===== Entries that cover one, three or twelve months =====
@@ -288,18 +373,28 @@ document.getElementById('month-chart').addEventListener('click', function (event
   renderAll();
 });
 
-// ===== Breakdowns: group the period's money by name =====
+// ===== Breakdowns: group the period's money by stream, then by sub-type =====
 
 function groupByCategory(type, months) {
-  const totals = {};
+  const groups = {};
   for (const entry of data.entries) {
     if (entry.type !== type) continue;
     const amount = amountIn(entry, months);
     if (amount === 0) continue;
-    totals[entry.category] = (totals[entry.category] || 0) + amount;
+    if (!groups[entry.category]) groups[entry.category] = { total: 0, subs: {} };
+    const group = groups[entry.category];
+    group.total += amount;
+    const sub = entry.subtype || 'Not specified';
+    group.subs[sub] = (group.subs[sub] || 0) + amount;
   }
-  return Object.entries(totals)
-    .map(([name, total]) => ({ name: name, total: total }))
+  return Object.entries(groups)
+    .map(([name, g]) => ({
+      name: name,
+      total: g.total,
+      subs: Object.entries(g.subs)
+        .map(([subName, subTotal]) => ({ name: subName, total: subTotal }))
+        .sort((a, b) => b.total - a.total)
+    }))
     .sort((a, b) => b.total - a.total);   // biggest first
 }
 
@@ -308,7 +403,7 @@ function renderBreakdown(elementId, type) {
   const label = periodLabel(periodType, anchor).main;
   const groups = groupByCategory(type, months);
   const total = groups.reduce((sum, g) => sum + g.total, 0);
-  const defaults = type === 'income' ? INCOME_STREAMS : COST_CATEGORIES;
+  const defaults = (type === 'income' ? INCOME_STREAMS : COST_CATEGORIES).map(c => c.name);
   const element = document.getElementById(elementId);
 
   if (total === 0) {
@@ -319,6 +414,13 @@ function renderBreakdown(elementId, type) {
   element.innerHTML = groups.map(g => {
     const percent = Math.round(g.total / total * 100);
     const own = defaults.includes(g.name) ? '' : ' <span class="own">(your own)</span>';
+
+    // Sub-type line, e.g. "YouTube $500 · Facebook $100" (only when something is specified)
+    const specified = g.subs.some(s => s.name !== 'Not specified');
+    const subLine = specified
+      ? `<p class="sub-line">${g.subs.map(s => `${escapeHtml(s.name)} ${formatUSD(s.total)}`).join(' · ')}</p>`
+      : '';
+
     return `
       <div class="stream">
         <div class="stream-row">
@@ -326,6 +428,7 @@ function renderBreakdown(elementId, type) {
           <span>${formatUSD(g.total)} · ${percent}%</span>
         </div>
         <div class="bar"><div class="bar-fill ${type === 'cost' ? 'cost' : ''}" style="width: ${percent}%"></div></div>
+        ${subLine}
       </div>`;
   }).join('');
 }
@@ -337,12 +440,17 @@ function renderBreakdowns() {
 
 // ===== The Add entry drawer =====
 
-let entryType = 'income';            // 'income' or 'cost'
-let selectedCategory = 'Sponsorship';
-let entrySpan = 1;                   // 1 = a month, 3 = a quarter, 12 = a year
+let entryType = 'income';                 // 'income' or 'cost'
+let selectedCategory = 'Platform revenue';
+let selectedSub = 'YouTube';              // '' = none picked
+let entrySpan = 1;                        // 1 = a month, 3 = a quarter, 12 = a year
 
 function currentChoices() {
   return entryType === 'income' ? INCOME_STREAMS : COST_CATEGORIES;
+}
+
+function currentDefinition() {
+  return currentChoices().find(c => c.name === selectedCategory);
 }
 
 // Fill the month and year dropdowns, and select this month
@@ -381,16 +489,53 @@ function renderTypeToggle() {
   document.getElementById('type-cost').setAttribute('aria-pressed', String(!isIncome));
   document.getElementById('category-legend').textContent = isIncome ? 'Where did it come from?' : 'What was it for?';
   document.getElementById('save-entry').textContent = isIncome ? 'Save income' : 'Save cost';
-  document.getElementById('entry-note').placeholder = isIncome ? 'e.g. Sponsor name' : 'e.g. Editor fee';
-  document.getElementById('other-name').placeholder = isIncome ? 'e.g. Merch, Live event, Grant' : 'e.g. Studio rent, Software';
+  document.getElementById('entry-note').placeholder = isIncome ? 'e.g. Episode 14 integration' : 'e.g. September edit';
+  document.getElementById('other-name').placeholder = isIncome ? 'e.g. Live event, Grant' : 'e.g. Studio rent, Insurance';
 }
 
-// Draw the chips and show "Name it" only when Other is picked
+// Draw the stream chips, the explanation line and "Name it" for Other
 function renderChips() {
   document.getElementById('category-chips').innerHTML = currentChoices()
-    .map(name => `<button type="button" class="chip" data-name="${name}" aria-pressed="${name === selectedCategory}">${name}</button>`)
+    .map(c => `<button type="button" class="chip" data-name="${c.name}" aria-pressed="${c.name === selectedCategory}">${c.name}</button>`)
     .join('');
   document.getElementById('other-field').hidden = selectedCategory !== 'Other';
+
+  const definition = currentDefinition();
+  const hint = document.getElementById('category-hint');
+  hint.textContent = definition.hint;
+  hint.hidden = definition.hint === '';
+
+  renderSubChips();
+}
+
+// Draw the second row (sub-types) and the Brand field
+function renderSubChips() {
+  const definition = currentDefinition();
+  const fieldset = document.getElementById('sub-fieldset');
+
+  fieldset.hidden = definition.subs.length === 0;
+  document.getElementById('sub-legend').textContent = definition.subLabel || '';
+  document.getElementById('sub-chips').innerHTML = definition.subs
+    .map(name => `<button type="button" class="chip" data-sub="${name}" aria-pressed="${name === selectedSub}">${name}</button>`)
+    .join('');
+  document.getElementById('sub-other-field').hidden = selectedSub !== 'Other';
+
+  document.getElementById('brand-field').hidden = !definition.brand;
+}
+
+// Suggest brands the creator has used before
+function renderBrandList() {
+  const brands = [...new Set(data.entries.map(e => e.brand).filter(Boolean))].sort();
+  document.getElementById('brand-list').innerHTML = brands
+    .map(b => `<option value="${escapeHtml(b)}"></option>`)
+    .join('');
+}
+
+// "coca cola" -> "Coca-Cola" if that spelling was used before (ignores case and spaces)
+function matchBrand(typed) {
+  const clean = text => text.toLowerCase().replace(/[\s\-.]/g, '');
+  const existing = data.entries.map(e => e.brand).find(b => b && clean(b) === clean(typed));
+  return existing || typed;
 }
 
 // Month / quarter / year pickers and the "spread evenly" hint
@@ -416,11 +561,18 @@ function renderSpreadHint() {
   }
 }
 
+// Pick a stream; required ones pre-select their first sub-type
+function selectCategory(name) {
+  selectedCategory = name;
+  const definition = currentDefinition();
+  selectedSub = definition.required ? definition.subs[0] : '';
+  renderChips();
+}
+
 function setType(type) {
   entryType = type;
-  selectedCategory = currentChoices()[0];
+  selectCategory(currentChoices()[0].name);
   renderTypeToggle();
-  renderChips();
 }
 
 document.getElementById('type-income').addEventListener('click', () => setType('income'));
@@ -428,10 +580,21 @@ document.getElementById('type-cost').addEventListener('click', () => setType('co
 
 document.getElementById('category-chips').addEventListener('click', function (event) {
   if (!event.target.classList.contains('chip')) return;
-  selectedCategory = event.target.dataset.name;
-  renderChips();
+  selectCategory(event.target.dataset.name);
   if (selectedCategory === 'Other') {
     document.getElementById('other-name').focus();
+  }
+});
+
+// Sub-type chips: click to pick, click again to un-pick (only when optional)
+document.getElementById('sub-chips').addEventListener('click', function (event) {
+  if (!event.target.classList.contains('chip')) return;
+  const name = event.target.dataset.sub;
+  const required = currentDefinition().required;
+  selectedSub = (selectedSub === name && !required) ? '' : name;
+  renderSubChips();
+  if (selectedSub === 'Other') {
+    document.getElementById('sub-other-name').focus();
   }
 });
 
@@ -449,6 +612,7 @@ const drawer = document.getElementById('entry-drawer');
 
 document.getElementById('open-entry').addEventListener('click', function () {
   syncFormToView();
+  renderBrandList();
   drawer.showModal();
   document.body.classList.add('drawer-open');
   document.getElementById('entry-amount').focus();
@@ -474,8 +638,15 @@ document.getElementById('entry-form').addEventListener('submit', function (event
   if (entrySpan === 1) firstMonth = Number(document.getElementById('entry-month').value);
   if (entrySpan === 3) firstMonth = (Number(document.getElementById('entry-quarter').value) - 1) * 3 + 1;
 
+  const definition = currentDefinition();
   const otherName = document.getElementById('other-name').value.trim();
   const category = selectedCategory === 'Other' ? (otherName || 'Other') : selectedCategory;
+
+  const subOtherName = document.getElementById('sub-other-name').value.trim();
+  const subtype = selectedSub === 'Other' ? (subOtherName || 'Other') : selectedSub;
+
+  const typedBrand = document.getElementById('entry-brand').value.trim();
+  const brand = definition.brand && typedBrand ? matchBrand(typedBrand) : '';
 
   data.entries.push({
     id: newId(),
@@ -484,6 +655,8 @@ document.getElementById('entry-form').addEventListener('submit', function (event
     month: monthKey(year, firstMonth),
     span: entrySpan,
     category: category,
+    subtype: subtype,
+    brand: brand,
     note: document.getElementById('entry-note').value.trim(),
     episodeId: ''
   });
@@ -497,11 +670,14 @@ document.getElementById('entry-form').addEventListener('submit', function (event
     periodType = entrySpan === 12 ? 'year' : 'quarter';
   }
   renderAll();
+  renderBrandList();
 
-  // Clear only what changes between entries; keep period and type
+  // Clear only what changes between entries; keep period, type and stream
   document.getElementById('entry-amount').value = '';
   document.getElementById('entry-note').value = '';
   document.getElementById('other-name').value = '';
+  document.getElementById('sub-other-name').value = '';
+  document.getElementById('entry-brand').value = '';
   renderSpreadHint();
   document.getElementById('entry-amount').focus();
 
@@ -539,12 +715,15 @@ function renderEntries() {
     const part = amountIn(entry, months);
     const isPartial = Math.abs(part - entry.amount) > 0.005;
     const sign = isIncome ? '+' : '−';
+    const details = [entry.brand ? `<strong>${escapeHtml(entry.brand)}</strong>` : '', escapeHtml(entry.note)]
+      .filter(Boolean)
+      .join(' · ');
     rows += `
       <tr>
         <td>${formatEntryPeriod(entry)}</td>
         <td><span class="badge ${entry.type}">${isIncome ? 'Income' : 'Cost'}</span></td>
-        <td>${escapeHtml(entry.category)}</td>
-        <td class="muted">${escapeHtml(entry.note)}</td>
+        <td>${escapeHtml(formatCategory(entry))}</td>
+        <td class="muted">${details}</td>
         <td class="number ${isIncome ? 'money-in' : ''}">${sign}${formatUSD(part)}${isPartial ? `<span class="small">of ${formatUSD(entry.amount)}</span>` : ''}</td>
         <td class="number"><button class="delete" data-id="${entry.id}">Delete</button></td>
       </tr>`;
@@ -557,7 +736,7 @@ function renderEntries() {
           <th>For</th>
           <th>Type</th>
           <th>Stream / category</th>
-          <th>Note</th>
+          <th>Brand / note</th>
           <th class="number">Amount</th>
           <th></th>
         </tr>
@@ -573,7 +752,7 @@ document.getElementById('entries-list').addEventListener('click', function (even
   if (!entry) return;
 
   const label = entry.type === 'income' ? 'income' : 'cost';
-  if (confirm(`Delete this ${formatUSD(entry.amount)} ${label} (${entry.category}, ${formatEntryPeriod(entry)})? This cannot be undone.`)) {
+  if (confirm(`Delete this ${formatUSD(entry.amount)} ${label} (${formatCategory(entry)}, ${formatEntryPeriod(entry)})? This cannot be undone.`)) {
     data.entries = data.entries.filter(e => e.id !== entry.id);
     saveData();
     renderAll();
