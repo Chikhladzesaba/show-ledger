@@ -235,6 +235,82 @@
       color: var(--danger);
     }
     button.delete:hover { background: #fdecea; opacity: 1; }
+    button.edit {
+      height: 32px;
+      padding: 0 12px;
+      background: none;
+      color: var(--accent);
+    }
+    button.edit:hover { background: #e8f1ff; opacity: 1; }
+    .row-actions { white-space: nowrap; }
+    #entries-list tbody tr { cursor: pointer; }
+    #entries-list tbody tr:hover td { background: var(--bg); }
+
+    /* ===== Welcome (first visit) ===== */
+    .welcome h2 { font-size: 22px; margin-bottom: 8px; }
+    .welcome-lead { margin: 0 0 20px; color: var(--muted); font-size: 15px; }
+    .welcome-steps { display: flex; flex-wrap: wrap; gap: 12px; margin: 0 0 20px; padding: 0; list-style: none; }
+    .welcome-steps li {
+      flex: 1 1 220px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .step-number { font-size: 13px; color: var(--accent); font-weight: 600; }
+    .step-title { font-weight: 500; }
+    .step-example { font-size: 13px; color: var(--muted); }
+    .welcome-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
+    .welcome-foot p { margin: 0; font-size: 13px; color: var(--muted); }
+
+    /* ===== Phone tweaks ===== */
+    @media (max-width: 600px) {
+      .page { padding: 20px 12px 40px; gap: 16px; }
+      .brand { font-size: 22px; }
+      .brand em { font-size: 26px; }
+      .subtitle { font-size: 14px; }
+      header #open-entry { width: 100%; }
+      .period-bar { flex-direction: column; align-items: stretch; }
+      .period-types { justify-content: space-between; }
+      .period-types button { flex: 1; padding: 0 8px; }
+      .period-nav { justify-content: space-between; }
+      .period-label { min-width: 0; flex: 1; font-size: 16px; }
+      .tile { flex: 1 1 140px; padding: 14px; }
+      .tile-value { font-size: 22px; }
+      .tile-label, .tile-change { font-size: 12px; }
+      .card { padding: 16px; }
+      .card h2 { font-size: 18px; }
+      .drawer-inner { padding: 16px; }
+
+      /* Chart: all 12 months fit the screen */
+      .chart { min-width: 0; gap: 2px; }
+      .month-col { padding: 6px 0; font-size: 10px; gap: 6px; }
+      .bars { height: 120px; gap: 2px; }
+      .bars i { width: 7px; }
+
+      /* Entries: each row becomes a small card */
+      table { min-width: 0; }
+      #entries-list thead { display: none; }
+      #entries-list tbody tr {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 4px 12px;
+        padding: 12px 0;
+        border-bottom: 1px solid var(--line);
+      }
+      #entries-list tbody tr:last-child { border-bottom: none; }
+      #entries-list td { padding: 0; border: none; text-align: left; }
+      #entries-list td:nth-child(1) { grid-column: 1; grid-row: 1; font-size: 13px; color: var(--muted); }
+      #entries-list td:nth-child(2) { grid-column: 2; grid-row: 1; justify-self: end; }
+      #entries-list td:nth-child(3) { grid-column: 1; grid-row: 2; font-weight: 500; }
+      #entries-list td:nth-child(5) { grid-column: 2; grid-row: 2; text-align: right; font-weight: 500; }
+      #entries-list td:nth-child(4) { grid-column: 1 / -1; grid-row: 3; font-size: 14px; }
+      #entries-list td:nth-child(4):empty { display: none; }
+      #entries-list td:nth-child(6) { grid-column: 1 / -1; grid-row: 4; margin-left: -12px; }
+    }
 
     /* ===== Add entry drawer ===== */
     .drawer {
@@ -345,6 +421,32 @@
       </div>
       <button type="button" id="open-entry">+ Add entry</button>
     </header>
+
+    <section id="welcome" class="card welcome" hidden>
+      <h2>Welcome to Show Ledger</h2>
+      <p class="welcome-lead">Log the money that comes in and goes out. Show Ledger adds it up by month, quarter and year.</p>
+      <ol class="welcome-steps">
+        <li>
+          <span class="step-number">Step 1</span>
+          <span class="step-title">Add money in</span>
+          <span class="step-example">e.g. your September AdSense payout</span>
+        </li>
+        <li>
+          <span class="step-number">Step 2</span>
+          <span class="step-title">Add money out</span>
+          <span class="step-example">e.g. what you paid your editor</span>
+        </li>
+        <li>
+          <span class="step-number">Step 3</span>
+          <span class="step-title">See what's working</span>
+          <span class="step-example">Profit, best streams and return per $1 spent</span>
+        </li>
+      </ol>
+      <div class="welcome-foot">
+        <button type="button" id="welcome-start">+ Add your first entry</button>
+        <p>Your numbers stay in this browser. Nothing is sent anywhere.</p>
+      </div>
+    </section>
 
     <div class="period-bar">
       <div class="segmented-pill period-types" role="group" aria-label="Period type">
