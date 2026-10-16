@@ -210,6 +210,7 @@
     .bar { height: 10px; border-radius: 999px; background: var(--line); overflow: hidden; }
     .bar-fill { height: 100%; border-radius: 999px; background: var(--accent); transition: width 0.3s ease; }
     .bar-fill.cost { background: #6b7a8c; }
+    .sub-line { font-size: 13px; color: var(--muted); margin: -2px 0 0; }
 
     /* ===== Tables ===== */
     #entries-list { overflow-x: auto; }
@@ -326,6 +327,8 @@
       color: #ffffff;
     }
     .hint { font-size: 13px; color: var(--muted); margin: 0; }
+    .sub-chips .chip { height: 36px; font-size: 14px; padding: 0 12px; }
+    .sub-chips .chip[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); }
 
     .save-row { position: sticky; bottom: 0; background: var(--surface); padding: 12px 0 4px; }
     .save-row button { width: 100%; height: 50px; font-size: 16px; }
@@ -445,16 +448,33 @@
         <fieldset>
           <legend id="category-legend">Where did it come from?</legend>
           <div class="chips" id="category-chips"></div>
+          <p class="hint" id="category-hint" hidden></p>
           <label class="field" id="other-field" hidden>
             Name it
-            <input type="text" id="other-name" placeholder="e.g. Merch, Live event, Grant">
+            <input type="text" id="other-name" placeholder="e.g. Live event, Grant">
             <span class="hint">It shows up in your reports under this name.</span>
           </label>
         </fieldset>
 
+        <fieldset id="sub-fieldset" hidden>
+          <legend id="sub-legend">Which platform?</legend>
+          <div class="chips sub-chips" id="sub-chips"></div>
+          <label class="field" id="sub-other-field" hidden>
+            Name it
+            <input type="text" id="sub-other-name" placeholder="e.g. Kick, Snapchat">
+          </label>
+        </fieldset>
+
+        <label class="field" id="brand-field" hidden>
+          Brand
+          <input type="text" id="entry-brand" list="brand-list" autocomplete="off" placeholder="The sponsor's name">
+          <datalist id="brand-list"></datalist>
+          <span class="hint">Past brands are suggested, so totals stay together.</span>
+        </label>
+
         <label class="field">
           Note (optional)
-          <input type="text" id="entry-note" placeholder="e.g. Sponsor name">
+          <input type="text" id="entry-note" placeholder="e.g. Episode 14 integration">
         </label>
 
         <div class="save-row">
