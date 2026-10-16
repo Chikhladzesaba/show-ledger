@@ -242,6 +242,41 @@
       color: var(--accent);
     }
     button.edit:hover { background: #e8f1ff; opacity: 1; }
+    button.mark-paid {
+      height: 32px;
+      padding: 0 12px;
+      background: none;
+      color: var(--good);
+    }
+    button.mark-paid:hover { background: #e7f5ec; opacity: 1; }
+    .badge.expected { background: #fff4e5; color: #8a4b00; }
+    .badge.overdue { background: #fdecea; color: #a8281b; }
+    .badge + .badge { margin-left: 6px; }
+    .is-expected .money-in, .is-expected td:nth-child(5) { color: var(--muted); }
+    .entries-head h2 { margin: 0; }
+    .entries-head button { height: 36px; font-size: 14px; }
+
+    /* ===== Pending payments bar ===== */
+    .pending {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px 32px;
+      background: #fffaf2;
+      border: 1px solid #f1d9b5;
+      border-radius: var(--radius);
+      padding: 16px 20px;
+    }
+    .pending-item { display: flex; flex-direction: column; gap: 2px; }
+    .pending-label { font-size: 13px; color: var(--muted); }
+    .pending-value { font-size: 22px; font-weight: 500; }
+    .pending-note { font-size: 13px; color: var(--muted); }
+    .pending-note.overdue { color: var(--danger); }
+    .pending button { margin-left: auto; height: 40px; }
+
+    /* ===== Checkbox row ===== */
+    .check { display: flex; align-items: center; gap: 10px; font-size: 15px; color: var(--ink); cursor: pointer; margin-top: 4px; }
+    .check input { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); }
     .row-actions { white-space: nowrap; }
     #entries-list tbody tr { cursor: pointer; }
     #entries-list tbody tr:hover td { background: var(--bg); }
@@ -386,7 +421,8 @@
     .segmented button[aria-pressed="true"] { background: var(--ink); color: #ffffff; }
 
     .span-types { display: flex; width: 100%; }
-    .span-types button { flex: 1; }
+    .span-types button, .status-types button { flex: 1; }
+    .status-types { display: flex; width: 100%; }
 
     fieldset { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
     legend { padding: 0; margin-bottom: 8px; font-size: 14px; color: var(--muted); }
@@ -468,6 +504,20 @@
       <div class="tile"><span class="tile-label">Return per $1 spent</span><span class="tile-value" id="tile-return">—</span><span class="tile-change" id="change-return"></span></div>
     </div>
 
+    <section id="pending" class="pending" hidden>
+      <div class="pending-item">
+        <span class="pending-label">Still owed to you</span>
+        <span class="pending-value" id="pending-in">$0.00</span>
+        <span class="pending-note" id="pending-in-note"></span>
+      </div>
+      <div class="pending-item">
+        <span class="pending-label">Bills to pay</span>
+        <span class="pending-value" id="pending-out">$0.00</span>
+        <span class="pending-note" id="pending-out-note"></span>
+      </div>
+      <button type="button" id="pending-show" class="secondary">Show pending</button>
+    </section>
+
     <section class="card">
       <div class="card-head">
         <h2 id="chart-title">By month</h2>
@@ -494,7 +544,10 @@
     </div>
 
     <section class="card">
-      <h2 id="entries-title">Entries</h2>
+      <div class="card-head entries-head">
+        <h2 id="entries-title">Entries</h2>
+        <button type="button" id="entries-back" class="secondary" hidden>Show all entries</button>
+      </div>
       <div id="entries-list"></div>
     </section>
 
@@ -518,6 +571,14 @@
           Amount (USD)
           <input type="number" id="entry-amount" class="amount-input" min="0" step="0.01" placeholder="0.00" required>
         </label>
+
+        <fieldset>
+          <legend id="status-legend">Has it arrived?</legend>
+          <div class="segmented-pill status-types" role="group" aria-label="Status">
+            <button type="button" id="status-paid" aria-pressed="true">Paid</button>
+            <button type="button" id="status-expected" aria-pressed="false">Expected</button>
+          </div>
+        </fieldset>
 
         <fieldset>
           <legend>This is for</legend>
@@ -546,6 +607,11 @@
             </label>
           </div>
           <p class="hint" id="spread-hint"></p>
+          <label class="check" id="repeat-row">
+            <input type="checkbox" id="entry-repeats">
+            <span>Repeats every month</span>
+          </label>
+          <p class="hint" id="repeat-hint" hidden></p>
         </fieldset>
 
         <fieldset>
