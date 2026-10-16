@@ -152,7 +152,7 @@ function loadData() {
   const empty = {
     entries: [], series: [],
     channels: [{ id: 'main', name: 'My channel' }],
-    settings: { mainCurrency: 'USD', gelPerUsd: 0, activeChannel: 'all' }
+    settings: { mainCurrency: 'USD', gelPerUsd: 0, activeChannel: 'all', taxRate: 0, taxBase: 'income' }
   };
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -506,6 +506,23 @@ function renderOverview() {
     setTile('return', currencySymbol() + now.ret.toFixed(2), '',
       `${arrow} ${currencySymbol()}${Math.abs(diff).toFixed(2)} vs ${prevName}`, trendClass(now.ret, before.ret));
   }
+
+  // Tax reserve: only shown when a percentage is set
+  const rate = data.settings.taxRate || 0;
+  document.getElementById('tax-tile').hidden = rate <= 0;
+  if (rate > 0) {
+    const reserve = taxReserve(now);
+    document.getElementById('tax-label').textContent = `Keep for taxes (${rate}% of ${data.settings.taxBase})`;
+    document.getElementById('tile-tax').textContent = formatMain(reserve);
+    document.getElementById('tax-note').textContent = `Profit after: ${formatMoney(now.profit - reserve)}`;
+  }
+}
+
+// How much to keep aside for taxes, from a period's totals
+function taxReserve(totals) {
+  const rate = data.settings.taxRate || 0;
+  const base = data.settings.taxBase === 'profit' ? Math.max(totals.profit, 0) : totals.income;
+  return base * rate / 100;
 }
 
 document.querySelector('.period-types').addEventListener('click', function (event) {
@@ -1339,6 +1356,8 @@ function renderSettings() {
     button.setAttribute('aria-pressed', String(button.dataset.main === mainCurrency()));
   });
   document.getElementById('default-rate').value = data.settings.gelPerUsd || '';
+  document.getElementById('tax-rate').value = data.settings.taxRate || '';
+  document.getElementById('tax-base').value = data.settings.taxBase || 'income';
   const hint = document.getElementById('default-rate-hint');
   hint.classList.remove('error');
   hint.textContent = 'Used for entries that have no rate of their own.';
@@ -1428,6 +1447,198 @@ document.getElementById('new-channel').addEventListener('keydown', function (eve
   if (event.key === 'Enter') addChannel();
 });
 
+// ===== Tax reserve settings =====
+
+document.getElementById('tax-rate').addEventListener('change', function (event) {
+  const rate = Number(event.target.value);
+  data.settings.taxRate = rate > 0 ? Math.min(rate, 100) : 0;
+  saveData();
+  renderSettings();
+  renderAll();
+});
+document.getElementById('tax-base').addEventListener('change', function (event) {
+  data.settings.taxBase = event.target.value;
+  saveData();
+  renderAll();
+});
+
+// ===== Forecast: next month, from what's already planned =====
+
+// Recurring copies that will appear next month but don't exist yet
+function upcomingCopies(month) {
+  const active = data.settings.activeChannel;
+  return data.series.filter(s =>
+    s.start < month &&
+    (!s.end || s.end >= month) &&
+    !s.skipped.includes(month) &&
+    (active === 'all' || s.channelId === active) &&
+    !data.entries.some(e => e.seriesId === s.id && e.month === month));
+}
+
+function forecastFor(month) {
+  const items = [];
+  // Entries already in that month (paid early or expected)
+  for (const e of visibleEntries()) {
+    const part = amountIn(e, [month]);
+    if (part > 0) items.push({ type: e.type, label: formatCategory(e), brand: e.brand, amount: part, tag: e.seriesId ? 'Repeats' : (e.status === 'expected' ? 'Expected' : 'Paid') });
+  }
+  // Monthly copies that will be added when the month starts
+  for (const s of upcomingCopies(month)) {
+    items.push({ type: s.type, label: formatCategory(s), brand: s.brand, amount: valueInMain(s), tag: 'Repeats' });
+  }
+  const sum = type => items.filter(i => i.type === type).reduce((total, i) => total + i.amount, 0);
+  return { items: items, income: sum('income'), costs: sum('cost') };
+}
+
+function renderForecast() {
+  const month = addMonths(todayKey(), 1);
+  const forecast = forecastFor(month);
+  document.getElementById('forecast-title').textContent = `Next month · ${formatMonth(month)}`;
+  document.getElementById('forecast-income').textContent = formatMain(forecast.income);
+  document.getElementById('forecast-costs').textContent = formatMain(forecast.costs);
+  const profit = document.getElementById('forecast-profit');
+  profit.textContent = formatMoney(forecast.income - forecast.costs);
+  profit.className = 'forecast-value ' + (forecast.income - forecast.costs < 0 ? 'loss' : '');
+
+  // A typical month: the average of the last 3 complete months
+  const last3 = [1, 2, 3].map(n => addMonths(todayKey(), -n));
+  const typical = totalsFor(last3);
+  document.getElementById('forecast-typical').textContent = typical.income || typical.costs
+    ? `A typical month lately (average of the last 3): income ${formatMain(typical.income / 3)}, costs ${formatMain(typical.costs / 3)}.`
+    : '';
+
+  const list = document.getElementById('forecast-list');
+  if (forecast.items.length === 0) {
+    list.innerHTML = `<li class="muted">Nothing planned for ${formatMonth(month)} yet. Recurring and expected entries show up here.</li>`;
+    return;
+  }
+  list.innerHTML = forecast.items
+    .sort((a, b) => b.amount - a.amount)
+    .map(i => `
+      <li>
+        <span>${escapeHtml(i.label)}${i.brand ? ` · <strong>${escapeHtml(i.brand)}</strong>` : ''}<span class="tag">${i.tag}</span></span>
+        <span class="${i.type === 'income' ? 'money-in' : ''}">${i.type === 'income' ? '+' : '−'}${formatMain(i.amount)}</span>
+      </li>`)
+    .join('');
+}
+
+// ===== Summary: one page for the selected period =====
+
+const summaryDialog = document.getElementById('summary-dialog');
+
+function buildSummary() {
+  const months = periodMonths(periodType, anchor);
+  const label = periodLabel(periodType, anchor);
+  const periodName = label.sub ? `${label.main} (${label.sub})` : label.main;
+  const active = data.settings.activeChannel;
+  const channel = active !== 'all' ? channelName(active) : (data.channels.length > 1 ? 'All channels' : '');
+  const totals = totalsFor(months);
+  const rate = data.settings.taxRate || 0;
+  const reserve = taxReserve(totals);
+  const income = groupByCategory('income', months);
+  const costs = groupByCategory('cost', months);
+  const pending = visibleEntries().filter(e => e.status === 'expected');
+  const owed = pending.filter(e => e.type === 'income').reduce((t, e) => t + valueInMain(e), 0);
+  const bills = pending.filter(e => e.type === 'cost').reduce((t, e) => t + valueInMain(e), 0);
+  const entries = visibleEntries()
+    .filter(e => amountIn(e, months) > 0)
+    .sort((a, b) => a.month.localeCompare(b.month));
+  const today = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+
+  const totalCells = [
+    ['Income', formatMain(totals.income)],
+    ['Costs', formatMain(totals.costs)],
+    ['Profit', formatMoney(totals.profit)],
+    [`Return per ${currencySymbol()}1 spent`, totals.ret === null ? '—' : currencySymbol() + totals.ret.toFixed(2)]
+  ];
+  if (rate > 0) {
+    totalCells.push([`Keep for taxes (${rate}% of ${data.settings.taxBase})`, formatMain(reserve)]);
+    totalCells.push(['Profit after tax reserve', formatMoney(totals.profit - reserve)]);
+  }
+
+  const groupRows = (groups) => groups.length === 0
+    ? '<tr><td colspan="3" class="muted">None</td></tr>'
+    : groups.map(g => {
+        const sum = groups.reduce((t, x) => t + x.total, 0);
+        const subs = g.subs.filter(x => x.name !== 'Not specified').map(x => `${escapeHtml(x.name)} ${formatMain(x.total)}`).join(' · ');
+        return `<tr><td>${escapeHtml(g.name)}${subs ? `<span class="small">${subs}</span>` : ''}</td><td class="number">${formatMain(g.total)}</td><td class="number">${Math.round(g.total / sum * 100)}%</td></tr>`;
+      }).join('');
+
+  const entryRows = entries.length === 0
+    ? '<tr><td colspan="5" class="muted">No entries</td></tr>'
+    : entries.map(e => {
+        const part = amountIn(e, months);
+        const status = e.status === 'expected' ? (e.type === 'income' ? 'Expected' : 'To pay') : 'Paid';
+        const details = [e.brand, e.note].filter(Boolean).map(escapeHtml).join(' · ');
+        return `<tr><td>${formatEntryPeriod(e)}</td><td>${escapeHtml(formatCategory(e))}${details ? `<span class="small">${details}</span>` : ''}</td><td>${status}</td><td class="number">${e.type === 'income' ? '+' : '−'}${formatMain(part)}</td></tr>`;
+      }).join('');
+
+  document.getElementById('summary-content').innerHTML = `
+    <h1 id="summary-title">Show <em>Ledger</em> · ${periodName}</h1>
+    <p class="meta">${channel ? escapeHtml(channel) + ' · ' : ''}Amounts in ${mainCurrency()} · Made on ${today}. Paid money only; pending is listed separately.</p>
+    <div class="summary-totals">${totalCells.map(([k, v]) => `<div><span>${k}</span><span>${v}</span></div>`).join('')}</div>
+    <h2>Income by stream</h2>
+    <table class="group-table"><tbody>${groupRows(income)}</tbody></table>
+    <h2>Costs by category</h2>
+    <table class="group-table"><tbody>${groupRows(costs)}</tbody></table>
+    <h2>Pending (all months)</h2>
+    <table class="group-table"><tbody>
+      <tr><td>Still owed to you</td><td class="number">${formatMain(owed)}</td></tr>
+      <tr><td>Bills to pay</td><td class="number">${formatMain(bills)}</td></tr>
+    </tbody></table>
+    <h2>Entries</h2>
+    <table>
+      <thead><tr><th>For</th><th>Stream / category</th><th>Status</th><th class="number">Amount</th></tr></thead>
+      <tbody>${entryRows}</tbody>
+    </table>
+    <p class="summary-foot">Made with Show Ledger.</p>`;
+
+  // The same summary as plain text, for messages
+  const lines = [
+    `Show Ledger · ${periodName}${channel ? ' · ' + channel : ''}`,
+    '',
+    ...totalCells.map(([k, v]) => `${k}: ${v}`),
+    '',
+    'Income by stream:',
+    ...(income.length ? income.map(g => `- ${g.name}: ${formatMain(g.total)}`) : ['- None']),
+    '',
+    'Costs by category:',
+    ...(costs.length ? costs.map(g => `- ${g.name}: ${formatMain(g.total)}`) : ['- None']),
+    '',
+    `Still owed to you: ${formatMain(owed)}`,
+    `Bills to pay: ${formatMain(bills)}`
+  ];
+  document.getElementById('summary-text').value = lines.join('\n');
+}
+
+document.getElementById('open-summary').addEventListener('click', function () {
+  buildSummary();
+  document.getElementById('copy-status').textContent = '';
+  summaryDialog.showModal();
+  document.body.classList.add('summary-open');
+});
+document.getElementById('close-summary').addEventListener('click', () => summaryDialog.close());
+summaryDialog.addEventListener('close', () => document.body.classList.remove('summary-open'));
+summaryDialog.addEventListener('click', function (event) {
+  if (event.target === summaryDialog) summaryDialog.close();
+});
+
+document.getElementById('print-summary').addEventListener('click', () => window.print());
+
+document.getElementById('copy-summary').addEventListener('click', async function () {
+  const text = document.getElementById('summary-text').value;
+  const status = document.getElementById('copy-status');
+  try {
+    await navigator.clipboard.writeText(text);
+    status.textContent = 'Copied ✓';
+  } catch (error) {
+    // Older browsers: select the hidden text and copy it
+    const box = document.getElementById('summary-text');
+    box.select();
+    status.textContent = document.execCommand('copy') ? 'Copied ✓' : 'Could not copy. Try again.';
+  }
+});
+
 // ===== Welcome card: only before the first entry =====
 
 function renderWelcome() {
@@ -1441,6 +1652,7 @@ function renderAll() {
   renderWelcome();
   renderOverview();
   renderPending();
+  renderForecast();
   renderChart();
   renderBreakdowns();
   renderEntries();
