@@ -1199,6 +1199,119 @@ document.getElementById('entry-form').addEventListener('submit', function (event
 // ===== The entries list (the selected period, or all pending) =====
 
 
+let expandedGroups = new Set();   // groups the creator opened (kept while switching periods)
+
+// A short, stable id for a group, safe to put in HTML
+function hashKey(text) {
+  let h = 0;
+  for (let i = 0; i < text.length; i++) h = (h * 31 + text.charCodeAt(i)) | 0;
+  return 'g' + (h >>> 0).toString(36);
+}
+
+// Entries that belong together: one repeating series, or the same stream,
+// sub-type, brand, person and cash/barter
+function groupKeyOf(entry) {
+  if (entry.seriesId) return hashKey('series|' + entry.seriesId);
+  return hashKey([entry.type, entry.payment || 'cash', entry.category, entry.subtype || '',
+    entry.brand || '', entry.person || '', entry.barterItem || ''].join('|'));
+}
+
+// Put entries into groups, newest group first
+function groupEntries(list) {
+  const groups = new Map();
+  for (const entry of list) {
+    const key = groupKeyOf(entry);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(entry);
+  }
+  return [...groups.entries()]
+    .map(([key, entries]) => ({ key, entries: entries.sort((a, b) => b.month.localeCompare(a.month)) }))
+    .sort((a, b) => b.entries[0].month.localeCompare(a.entries[0].month));
+}
+
+// 'Jan–Dec 2026' or 'Nov 2025 – Feb 2026'
+function monthRange(entries) {
+  const months = entries.flatMap(entryMonths).sort();
+  const first = months[0], last = months[months.length - 1];
+  if (first === last) return formatMonth(first);
+  const [y1, m1] = first.split('-'), [y2, m2] = last.split('-');
+  return y1 === y2
+    ? `${MONTH_NAMES[Number(m1) - 1]}–${MONTH_NAMES[Number(m2) - 1]} ${y2}`
+    : `${formatMonth(first)} – ${formatMonth(last)}`;
+}
+
+// One table row for one entry
+function entryRow(entry, months, groupKey) {
+  const isIncome = entry.type === 'income';
+  const expected = entry.status === 'expected';
+  const part = showPendingOnly ? valueInMain(entry) : amountIn(entry, months);
+  const isPartial = Math.abs(part - valueInMain(entry)) > 0.005;   // only part of a quarter/year
+  const sign = isIncome ? '+' : '−';
+  const showChannel = data.settings.activeChannel === 'all' && data.channels.length > 1;
+  const channelTag = showChannel ? `<span class="channel-tag">${escapeHtml(channelName(entry.channelId))}</span>` : '';
+  const barterText = isBarter(entry) && entry.barterItem
+    ? `${escapeHtml(entry.barterItem)} (${entry.valuedBy === 'rate' ? 'our usual rate' : 'market price'})`
+    : '';
+  const details = channelTag + [entry.brand ? `<strong>${escapeHtml(entry.brand)}</strong>` : '', barterText, peopleText(entry), escapeHtml(entry.note)]
+    .filter(Boolean)
+    .join(' · ');
+
+  // Paid in another currency: show the original amount and its rate
+  const foreign = (entry.currency || 'USD') !== mainCurrency()
+    ? `<span class="small">${formatIn(entry.amount, entry.currency)} · 1 USD = ${entry.gelPerUsd || data.settings.gelPerUsd} GEL</span>`
+    : '';
+
+  let badges = `<span class="badge ${entry.type}">${isIncome ? 'Income' : 'Cost'}</span>`;
+  if (isBarter(entry)) badges += '<span class="badge barter">Barter</span>';
+  if (isOverdue(entry)) badges += '<span class="badge overdue">Overdue</span>';
+  else if (expected) badges += `<span class="badge expected">${isIncome ? 'Expected' : 'To pay'}</span>`;
+
+  const repeating = entry.seriesId && !groupKey ? '<span class="small">Repeats monthly</span>' : '';
+  const markPaid = expected ? `<button class="mark-paid" data-id="${entry.id}">${isBarter(entry) ? 'Mark received' : 'Mark paid'}</button>` : '';
+  const classes = [expected ? 'is-expected' : '', groupKey ? 'child-row' : ''].join(' ').trim();
+  const hidden = groupKey && !expandedGroups.has(groupKey) ? ' hidden' : '';
+
+  return `
+      <tr data-id="${entry.id}" class="${classes}"${groupKey ? ` data-parent="${groupKey}"` : ''}${hidden}>
+        <td>${formatEntryPeriod(entry)}</td>
+        <td>${badges}</td>
+        <td>${escapeHtml(formatCategory(entry))}${repeating}</td>
+        <td class="muted">${details}</td>
+        <td class="number ${isIncome ? 'money-in' : ''}">${sign}${formatMain(part)}${isPartial ? `<span class="small">of ${formatMain(valueInMain(entry))}</span>` : ''}${foreign}</td>
+        <td class="number row-actions">${markPaid}<button class="edit" data-id="${entry.id}">Edit</button><button class="delete" data-id="${entry.id}">Delete</button></td>
+      </tr>`;
+}
+
+// The summary row of a group: opens and closes its entries
+function groupRow(group, months) {
+  const first = group.entries[0];
+  const isIncome = first.type === 'income';
+  const open = expandedGroups.has(group.key);
+  const total = group.entries.reduce((t, e) => t + (showPendingOnly ? valueInMain(e) : amountIn(e, months)), 0);
+  const expected = group.entries.filter(e => e.status === 'expected').length;
+  const overdue = group.entries.filter(isOverdue).length;
+  const count = group.entries.length;
+
+  let badges = `<span class="badge ${first.type}">${isIncome ? 'Income' : 'Cost'}</span>`;
+  if (isBarter(first)) badges += '<span class="badge barter">Barter</span>';
+  if (overdue) badges += `<span class="badge overdue">${overdue} overdue</span>`;
+  else if (expected) badges += `<span class="badge expected">${expected} ${isIncome ? 'expected' : 'to pay'}</span>`;
+
+  const who = [first.brand ? `<strong>${escapeHtml(first.brand)}</strong>` : '', first.person ? escapeHtml(first.person) : '', first.barterItem ? escapeHtml(first.barterItem) : '']
+    .filter(Boolean).join(' · ');
+  const label = first.seriesId ? 'Repeats monthly' : `${count} entries`;
+
+  return `
+      <tr class="group-row" data-group="${group.key}">
+        <td>${monthRange(group.entries)}</td>
+        <td>${badges}</td>
+        <td>${escapeHtml(formatCategory(first))}<span class="small">${label}</span></td>
+        <td class="muted">${who}</td>
+        <td class="number ${isIncome ? 'money-in' : ''}"><strong>${isIncome ? '+' : '−'}${formatMain(total)}</strong></td>
+        <td class="number row-actions">${expected ? `<button type="button" class="mark-all" data-group="${group.key}">${isBarter(first) ? 'Mark all received' : 'Mark all paid'}</button>` : ''}<button type="button" class="group-toggle" aria-expanded="${open}">${open ? '▾ Hide' : `▸ Show ${count}`}</button></td>
+      </tr>`;
+}
+
 function renderEntries() {
   const list = document.getElementById('entries-list');
   const label = periodLabel(periodType, anchor).main;
@@ -1213,8 +1326,7 @@ function renderEntries() {
   }
 
   const shown = visibleEntries()
-    .filter(e => showPendingOnly ? e.status === 'expected' : amountIn(e, months) > 0)
-    .sort((a, b) => b.month.localeCompare(a.month));   // newest first
+    .filter(e => showPendingOnly ? e.status === 'expected' : amountIn(e, months) > 0);
 
   if (shown.length === 0) {
     list.innerHTML = showPendingOnly
@@ -1223,44 +1335,15 @@ function renderEntries() {
     return;
   }
 
+  // Single entries are normal rows; repeating ones fold into a group row
   let rows = '';
-  for (const entry of shown) {
-    const isIncome = entry.type === 'income';
-    const expected = entry.status === 'expected';
-    const part = showPendingOnly ? entry.amount : amountIn(entry, months);
-    const isPartial = Math.abs(part - valueInMain(entry)) > 0.005;   // only part of a quarter/year
-    const sign = isIncome ? '+' : '−';
-    const showChannel = data.settings.activeChannel === 'all' && data.channels.length > 1;
-    const channelTag = showChannel ? `<span class="channel-tag">${escapeHtml(channelName(entry.channelId))}</span>` : '';
-    const barterText = isBarter(entry) && entry.barterItem
-      ? `${escapeHtml(entry.barterItem)} (${entry.valuedBy === 'rate' ? 'our usual rate' : 'market price'})`
-      : '';
-    const details = channelTag + [entry.brand ? `<strong>${escapeHtml(entry.brand)}</strong>` : '', barterText, peopleText(entry), escapeHtml(entry.note)]
-      .filter(Boolean)
-      .join(' · ');
-
-    // Paid in another currency: show the original amount and its rate
-    const foreign = (entry.currency || 'USD') !== mainCurrency()
-      ? `<span class="small">${formatIn(entry.amount, entry.currency)} · 1 USD = ${entry.gelPerUsd || data.settings.gelPerUsd} GEL</span>`
-      : '';
-
-    let badges = `<span class="badge ${entry.type}">${isIncome ? 'Income' : 'Cost'}</span>`;
-    if (isBarter(entry)) badges += '<span class="badge barter">Barter</span>';
-    if (isOverdue(entry)) badges += '<span class="badge overdue">Overdue</span>';
-    else if (expected) badges += `<span class="badge expected">${isIncome ? 'Expected' : 'To pay'}</span>`;
-
-    const repeating = entry.seriesId ? '<span class="small">Repeats monthly</span>' : '';
-    const markPaid = expected ? `<button class="mark-paid" data-id="${entry.id}">${isBarter(entry) ? 'Mark received' : 'Mark paid'}</button>` : '';
-
-    rows += `
-      <tr data-id="${entry.id}" class="${expected ? 'is-expected' : ''}">
-        <td>${formatEntryPeriod(entry)}</td>
-        <td>${badges}</td>
-        <td>${escapeHtml(formatCategory(entry))}${repeating}</td>
-        <td class="muted">${details}</td>
-        <td class="number ${isIncome ? 'money-in' : ''}">${sign}${formatMain(part)}${isPartial ? `<span class="small">of ${formatMain(valueInMain(entry))}</span>` : ''}${foreign}</td>
-        <td class="number row-actions">${markPaid}<button class="edit" data-id="${entry.id}">Edit</button><button class="delete" data-id="${entry.id}">Delete</button></td>
-      </tr>`;
+  for (const group of groupEntries(shown)) {
+    if (group.entries.length === 1) {
+      rows += entryRow(group.entries[0], months, null);
+    } else {
+      rows += groupRow(group, months);
+      rows += group.entries.map(e => entryRow(e, months, group.key)).join('');
+    }
   }
 
   list.innerHTML = `
@@ -1279,7 +1362,37 @@ function renderEntries() {
     </table>`;
 }
 
+// Open or close a group (works for the entries list and the barter card)
+function toggleGroup(row) {
+  const key = row.dataset.group;
+  if (expandedGroups.has(key)) expandedGroups.delete(key);
+  else expandedGroups.add(key);
+  const open = expandedGroups.has(key);
+  row.parentElement.querySelectorAll(`tr[data-parent="${key}"]`).forEach(child => { child.hidden = !open; });
+  const button = row.querySelector('.group-toggle');
+  const count = row.parentElement.querySelectorAll(`tr[data-parent="${key}"]`).length;
+  button.setAttribute('aria-expanded', String(open));
+  button.textContent = open ? '▾ Hide' : `▸ Show ${count}`;
+}
+
 document.getElementById('entries-list').addEventListener('click', function (event) {
+  const groupRowEl = event.target.closest('tr.group-row');
+  if (groupRowEl) {
+    // "Mark all paid": confirm every expected entry in this group at once
+    if (event.target.classList.contains('mark-all')) {
+      const ids = [...groupRowEl.parentElement.querySelectorAll(`tr[data-parent="${groupRowEl.dataset.group}"]`)].map(r => r.dataset.id);
+      const list = data.entries.filter(e => ids.includes(e.id) && e.status === 'expected');
+      if (confirm(`Mark ${list.length} ${list.length === 1 ? 'entry' : 'entries'} as ${isBarter(list[0]) ? 'received' : 'paid'}?`)) {
+        list.forEach(e => { e.status = 'paid'; });
+        saveData();
+        renderAll();
+      }
+      return;
+    }
+    toggleGroup(groupRowEl);
+    return;
+  }
+
   const row = event.target.closest('tr[data-id]');
   if (!row) return;
   const entry = data.entries.find(e => e.id === row.dataset.id);
@@ -1979,20 +2092,53 @@ function renderBarter() {
   card.hidden = rows.length === 0;
   if (card.hidden) return;
   document.getElementById('barter-title').textContent = `Barter · ${periodLabel(periodType, anchor).main}`;
-  document.getElementById('barter-list').innerHTML = `
-    <table>
-      <thead><tr><th>For</th><th>What</th><th>From / to</th><th>Valued by</th><th class="number">Value</th></tr></thead>
-      <tbody>${rows.map(e => `
-        <tr>
+
+  const line = (e, groupKey) => `
+        <tr class="${groupKey ? 'child-row' : ''}"${groupKey ? ` data-parent="${groupKey}"` : ''}${groupKey && !expandedGroups.has(groupKey) ? ' hidden' : ''}>
           <td>${formatEntryPeriod(e)}</td>
           <td>${escapeHtml(e.barterItem || formatCategory(e))}<span class="small">${e.type === 'income' ? 'Received' : 'Given'} · ${escapeHtml(formatCategory(e))}${e.status === 'expected' ? ' · not received yet' : ''}</span></td>
           <td>${escapeHtml(e.brand || e.person || '')}</td>
           <td>${e.valuedBy === 'rate' ? 'Our usual rate' : 'Market price'}</td>
           <td class="number">${e.type === 'income' ? '+' : '−'}${formatMain(amountIn(e, months))}</td>
-        </tr>`).join('')}
-      </tbody>
+          <td></td>
+        </tr>`;
+
+  // Same brand and item = one group, opened with "Show"
+  const groups = new Map();
+  for (const e of rows) {
+    const key = hashKey(['barter', e.type, e.brand || '', e.person || '', e.barterItem || '', e.category].join('|'));
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(e);
+  }
+  let body = '';
+  for (const [key, list] of groups) {
+    if (list.length === 1) { body += line(list[0], null); continue; }
+    const e = list[0];
+    const open = expandedGroups.has(key);
+    const total = list.reduce((t, x) => t + amountIn(x, months), 0);
+    body += `
+        <tr class="group-row" data-group="${key}">
+          <td>${monthRange(list)}</td>
+          <td>${escapeHtml(e.barterItem || formatCategory(e))}<span class="small">${e.type === 'income' ? 'Received' : 'Given'} · ${list.length} times</span></td>
+          <td>${escapeHtml(e.brand || e.person || '')}</td>
+          <td>${e.valuedBy === 'rate' ? 'Our usual rate' : 'Market price'}</td>
+          <td class="number"><strong>${e.type === 'income' ? '+' : '−'}${formatMain(total)}</strong></td>
+          <td class="number"><button type="button" class="group-toggle" aria-expanded="${open}">${open ? '▾ Hide' : `▸ Show ${list.length}`}</button></td>
+        </tr>`;
+    body += list.map(x => line(x, key)).join('');
+  }
+
+  document.getElementById('barter-list').innerHTML = `
+    <table>
+      <thead><tr><th>For</th><th>What</th><th>From / to</th><th>Valued by</th><th class="number">Value</th><th></th></tr></thead>
+      <tbody>${body}</tbody>
     </table>`;
 }
+
+document.getElementById('barter-list').addEventListener('click', function (event) {
+  const row = event.target.closest('tr.group-row');
+  if (row) toggleGroup(row);
+});
 
 function barterSummary(months) {
   const rows = barterRows(months);
