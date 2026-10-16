@@ -398,11 +398,103 @@ document.getElementById('entries-list').addEventListener('click', function (even
     renderAll();
   }
 });
+// ===== Monthly chart: the whole year of the selected period =====
 
+function renderChart() {
+  const year = anchor.year;
+  const selected = periodMonths(periodType, anchor);
+  document.getElementById('chart-title').textContent = `${year} by month`;
+
+  // Totals for each of the 12 months
+  const months = Array.from({ length: 12 }, (_, i) => {
+    const key = monthKey(year, i + 1);
+    const list = data.entries.filter(e => e.month === key);
+    return {
+      key: key,
+      name: MONTH_NAMES[i],
+      income: sumAmounts(list.filter(e => e.type === 'income')),
+      costs: sumAmounts(list.filter(e => e.type === 'cost'))
+    };
+  });
+
+  // The tallest bar in the year gets the full height
+  const max = Math.max(...months.map(m => Math.max(m.income, m.costs)), 0);
+  const height = value => (max > 0 ? Math.round(value / max * 180) : 0);
+  const bar = (value, kind) => value > 0
+    ? `<i class="${kind}" style="height: ${Math.max(height(value), 3)}px"></i>`
+    : '<i class="none" style="height: 2px"></i>';
+
+  document.getElementById('month-chart').innerHTML = months.map(m => {
+    const isSelected = selected.includes(m.key);
+    return `
+      <button type="button" class="month-col ${isSelected ? 'selected' : 'dim'}" data-month="${m.key}"
+        aria-label="${m.name} ${year}: income ${formatUSD(m.income)}, costs ${formatUSD(m.costs)}. Show this month.">
+        <span class="bars">${bar(m.income, 'income')}${bar(m.costs, 'cost')}</span>
+        <span>${m.name}</span>
+      </button>`;
+  }).join('');
+}
+
+// Clicking a month opens its Month view
+document.getElementById('month-chart').addEventListener('click', function (event) {
+  const column = event.target.closest('.month-col');
+  if (!column) return;
+  const [year, month] = column.dataset.month.split('-');
+  anchor = { year: Number(year), month: Number(month) };
+  periodType = 'month';
+  renderAll();
+});
+
+// ===== Breakdowns: group the period's entries by name =====
+
+function groupByCategory(type, months) {
+  const totals = {};
+  for (const entry of data.entries) {
+    if (entry.type !== type || !months.includes(entry.month)) continue;
+    totals[entry.category] = (totals[entry.category] || 0) + entry.amount;
+  }
+  return Object.entries(totals)
+    .map(([name, total]) => ({ name: name, total: total }))
+    .sort((a, b) => b.total - a.total);   // biggest first
+}
+
+function renderBreakdown(elementId, type) {
+  const months = periodMonths(periodType, anchor);
+  const label = periodLabel(periodType, anchor).main;
+  const groups = groupByCategory(type, months);
+  const total = groups.reduce((sum, g) => sum + g.total, 0);
+  const defaults = type === 'income' ? INCOME_STREAMS : COST_CATEGORIES;
+  const element = document.getElementById(elementId);
+
+  if (total === 0) {
+    element.innerHTML = `<p class="empty">No ${type === 'income' ? 'income' : 'costs'} in ${label}.</p>`;
+    return;
+  }
+
+  element.innerHTML = groups.map(g => {
+    const percent = Math.round(g.total / total * 100);
+    const own = defaults.includes(g.name) ? '' : ' <span class="own">(your own)</span>';
+    return `
+      <div class="stream">
+        <div class="stream-row">
+          <span>${escapeHtml(g.name)}${own}</span>
+          <span>${formatUSD(g.total)} · ${percent}%</span>
+        </div>
+        <div class="bar"><div class="bar-fill ${type === 'cost' ? 'cost' : ''}" style="width: ${percent}%"></div></div>
+      </div>`;
+  }).join('');
+}
+
+function renderBreakdowns() {
+  renderBreakdown('income-breakdown', 'income');
+  renderBreakdown('cost-breakdown', 'cost');
+}
 // ===== Start =====
 
 function renderAll() {
   renderOverview();
+  renderChart();
+  renderBreakdowns();
   renderEntries();
 }
 
