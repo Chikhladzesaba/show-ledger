@@ -204,6 +204,63 @@
     .tile-change { font-size: 13px; color: var(--muted); min-height: 18px; }
     .up, .profit { color: var(--good); }
     .down, .loss { color: var(--danger); }
+        /* ===== Monthly chart ===== */
+    .card-head {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .card-head h2 { margin: 0; }
+    .legend { display: flex; gap: 16px; font-size: 13px; color: var(--muted); }
+    .legend span { display: flex; align-items: center; gap: 6px; }
+    .swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+    .swatch.income { background: var(--accent); }
+    .swatch.cost { background: #9aa9bb; }
+
+    .chart-scroll { overflow-x: auto; }
+    .chart {
+      min-width: 620px;
+      display: grid;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      gap: 6px;
+      align-items: end;
+    }
+    .month-col {
+      height: auto;
+      padding: 8px 0;
+      background: transparent;
+      color: var(--muted);
+      border-radius: 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+    }
+    .month-col:hover { background: var(--bg); opacity: 1; }
+    .month-col.dim { opacity: 0.4; }
+    .month-col.dim:hover { opacity: 0.8; }
+    .month-col.selected { color: var(--ink); font-weight: 600; }
+    .bars { height: 180px; display: flex; align-items: flex-end; gap: 3px; }
+    .bars i { width: 14px; border-radius: 4px 4px 0 0; display: block; }
+    .bars .income { background: var(--accent); }
+    .bars .cost { background: #9aa9bb; }
+    .bars .none { background: var(--line); border-radius: 0; }
+    .hint.muted { margin: 12px 0 0; }
+
+    /* ===== Breakdowns ===== */
+    .split { display: flex; flex-wrap: wrap; gap: 16px; }
+    .split .card { flex: 1 1 400px; }
+    .stream { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+    .stream:last-child { margin-bottom: 0; }
+    .stream-row { display: flex; justify-content: space-between; gap: 12px; font-size: 15px; }
+    .own { color: var(--muted); font-size: 13px; }
+    .bar { height: 10px; border-radius: 999px; background: var(--line); overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 999px; background: var(--accent); }
+    .bar-fill.cost { background: #6b7a8c; }
     /* ===== Tables ===== */
     #entries-list { overflow-x: auto; }
     table { width: 100%; min-width: 600px; border-collapse: collapse; font-size: 15px; }
@@ -302,6 +359,30 @@
       <div class="tile"><span class="tile-label">Costs</span><span class="tile-value" id="tile-costs">—</span><span class="tile-change" id="change-costs"></span></div>
       <div class="tile"><span class="tile-label">Profit</span><span class="tile-value" id="tile-profit">—</span><span class="tile-change" id="change-profit"></span></div>
       <div class="tile"><span class="tile-label">Return per $1 spent</span><span class="tile-value" id="tile-return">—</span><span class="tile-change" id="change-return"></span></div>
+    </div>
+        <section class="card">
+      <div class="card-head">
+        <h2 id="chart-title">By month</h2>
+        <div class="legend">
+          <span><i class="swatch income"></i>Income</span>
+          <span><i class="swatch cost"></i>Costs</span>
+        </div>
+      </div>
+      <div class="chart-scroll">
+        <div class="chart" id="month-chart"></div>
+      </div>
+      <p class="hint muted">Click a month to see it on its own.</p>
+    </section>
+
+    <div class="split">
+      <section class="card">
+        <h2>Income by stream</h2>
+        <div id="income-breakdown"></div>
+      </section>
+      <section class="card">
+        <h2>Costs by category</h2>
+        <div id="cost-breakdown"></div>
+      </section>
     </div>
     <section class="card">
       <h2 id="entries-title">Entries</h2>
