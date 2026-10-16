@@ -25,6 +25,7 @@
       --sans: "Inter Tight", system-ui, sans-serif;
       --serif: "Instrument Serif", Georgia, serif;
       --radius: 16px;
+      --drawer: 440px;
     }
 
     * { box-sizing: border-box; }
@@ -42,10 +43,19 @@
     .page {
       max-width: 1120px;
       margin: 0 auto;
-      padding: 40px 16px 56px;
+      padding: 32px 16px 56px;
       display: flex;
       flex-direction: column;
-      gap: 24px;
+      gap: 20px;
+      transition: margin 0.25s ease;
+    }
+
+    /* On wide screens the dashboard moves left while the drawer is open */
+    @media (min-width: 1100px) {
+      body.drawer-open .page {
+        margin-left: 24px;
+        margin-right: calc(var(--drawer) + 24px);
+      }
     }
 
     /* ===== Header ===== */
@@ -77,6 +87,7 @@
       color: var(--ink);
       border: 1px solid var(--border);
     }
+    button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
     /* ===== Cards ===== */
     .card {
@@ -88,69 +99,6 @@
     .card h2 { margin: 0 0 16px; font-size: 20px; font-weight: 500; }
     .empty { color: var(--muted); font-style: italic; margin: 0; }
 
-    /* ===== Add entry panel ===== */
-    #entry-panel { max-width: 560px; width: 100%; }
-    .panel-head {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 20px;
-    }
-    .panel-head h2 { margin: 0; }
-
-    #entry-form { display: flex; flex-direction: column; gap: 20px; }
-
-    .field {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      font-size: 14px;
-      color: var(--muted);
-    }
-    .row { display: flex; flex-wrap: wrap; gap: 12px; }
-    .row .field { flex: 1 1 140px; }
-
-    input, select {
-      height: 48px;
-      padding: 0 14px;
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      font: 16px var(--sans);
-      color: var(--ink);
-      background: var(--surface);
-    }
-    input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
-    .amount-input { height: 60px; font-size: 28px; font-weight: 500; }
-
-    /* Money in / Money out switch */
-    .segmented {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 4px;
-      padding: 4px;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 999px;
-    }
-    .segmented button { background: transparent; color: var(--muted); }
-    .segmented button[aria-pressed="true"] { background: var(--ink); color: #ffffff; }
-
-    /* Stream / category chips */
-    fieldset { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
-    legend { padding: 0; margin-bottom: 10px; font-size: 14px; color: var(--muted); }
-    .chips { display: flex; flex-wrap: wrap; gap: 8px; }
-    .chip {
-      background: var(--surface);
-      color: var(--ink);
-      border: 1px solid var(--border);
-      padding: 0 16px;
-    }
-    .chip[aria-pressed="true"] {
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #ffffff;
-    }
-    .hint { font-size: 13px; }
     /* ===== Period switch ===== */
     .period-bar {
       display: flex;
@@ -159,7 +107,7 @@
       align-items: center;
       gap: 12px;
     }
-    .period-types {
+    .segmented-pill {
       display: inline-flex;
       gap: 4px;
       padding: 4px;
@@ -167,14 +115,14 @@
       border: 1px solid var(--border);
       border-radius: 999px;
     }
-    .period-types button {
+    .segmented-pill button {
       height: 36px;
       padding: 0 18px;
       background: transparent;
       color: var(--muted);
       font-size: 14px;
     }
-    .period-types button[aria-pressed="true"] { background: var(--ink); color: #ffffff; }
+    .segmented-pill button[aria-pressed="true"] { background: var(--ink); color: #ffffff; }
     .period-nav { display: flex; align-items: center; gap: 8px; }
     .icon-button {
       width: 44px;
@@ -190,7 +138,7 @@
     /* ===== Summary tiles ===== */
     .tiles { display: flex; flex-wrap: wrap; gap: 16px; }
     .tile {
-      flex: 1 1 220px;
+      flex: 1 1 160px;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
@@ -200,11 +148,12 @@
       gap: 6px;
     }
     .tile-label { font-size: 14px; color: var(--muted); }
-    .tile-value { font-size: 32px; font-weight: 500; }
+    .tile-value { font-size: 30px; font-weight: 500; transition: color 0.2s; }
     .tile-change { font-size: 13px; color: var(--muted); min-height: 18px; }
     .up, .profit { color: var(--good); }
     .down, .loss { color: var(--danger); }
-        /* ===== Monthly chart ===== */
+
+    /* ===== Monthly chart ===== */
     .card-head {
       display: flex;
       flex-wrap: wrap;
@@ -222,7 +171,7 @@
 
     .chart-scroll { overflow-x: auto; }
     .chart {
-      min-width: 620px;
+      min-width: 560px;
       display: grid;
       grid-template-columns: repeat(12, minmax(0, 1fr));
       gap: 6px;
@@ -244,34 +193,36 @@
     .month-col.dim { opacity: 0.4; }
     .month-col.dim:hover { opacity: 0.8; }
     .month-col.selected { color: var(--ink); font-weight: 600; }
-    .bars { height: 180px; display: flex; align-items: flex-end; gap: 3px; }
-    .bars i { width: 14px; border-radius: 4px 4px 0 0; display: block; }
+    .bars { height: 160px; display: flex; align-items: flex-end; gap: 3px; }
+    .bars i { width: 12px; border-radius: 4px 4px 0 0; display: block; transition: height 0.3s ease; }
     .bars .income { background: var(--accent); }
     .bars .cost { background: #9aa9bb; }
     .bars .none { background: var(--line); border-radius: 0; }
-    .hint.muted { margin: 12px 0 0; }
+    .chart-hint { margin: 12px 0 0; font-size: 13px; color: var(--muted); }
 
     /* ===== Breakdowns ===== */
     .split { display: flex; flex-wrap: wrap; gap: 16px; }
-    .split .card { flex: 1 1 400px; }
+    .split .card { flex: 1 1 340px; }
     .stream { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
     .stream:last-child { margin-bottom: 0; }
     .stream-row { display: flex; justify-content: space-between; gap: 12px; font-size: 15px; }
     .own { color: var(--muted); font-size: 13px; }
     .bar { height: 10px; border-radius: 999px; background: var(--line); overflow: hidden; }
-    .bar-fill { height: 100%; border-radius: 999px; background: var(--accent); }
+    .bar-fill { height: 100%; border-radius: 999px; background: var(--accent); transition: width 0.3s ease; }
     .bar-fill.cost { background: #6b7a8c; }
+
     /* ===== Tables ===== */
     #entries-list { overflow-x: auto; }
     table { width: 100%; min-width: 600px; border-collapse: collapse; font-size: 15px; }
-    th, td { text-align: left; padding: 12px 8px; border-bottom: 1px solid var(--line); }
+    th, td { text-align: left; padding: 12px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
     th { color: var(--muted); font-size: 13px; font-weight: 500; }
     tr:last-child td { border-bottom: none; }
     .number { text-align: right; }
     .muted { color: var(--muted); }
     .money-in { color: var(--good); }
+    .small { display: block; font-size: 13px; color: var(--muted); margin-top: 2px; }
 
-    .badge { font-size: 13px; padding: 3px 10px; border-radius: 999px; }
+    .badge { font-size: 13px; padding: 3px 10px; border-radius: 999px; white-space: nowrap; }
     .badge.income { background: #e8f1ff; color: #0047b3; }
     .badge.cost { background: #eef0f3; color: #3d4654; }
 
@@ -282,6 +233,102 @@
       color: var(--danger);
     }
     button.delete:hover { background: #fdecea; opacity: 1; }
+
+    /* ===== Add entry drawer ===== */
+    .drawer {
+      position: fixed;
+      inset: 0 0 0 auto;
+      margin: 0;
+      width: min(var(--drawer), 100%);
+      height: 100%;
+      max-height: 100%;
+      max-width: 100%;
+      padding: 0;
+      border: 0;
+      border-left: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--ink);
+      box-shadow: -12px 0 40px rgba(26, 27, 34, 0.08);
+      overflow-y: auto;
+    }
+    .drawer[open] { animation: slide-in 0.25s ease-out; }
+    .drawer::backdrop { background: rgba(26, 27, 34, 0.12); }
+    @media (min-width: 1100px) {
+      .drawer::backdrop { background: transparent; }
+    }
+    @keyframes slide-in {
+      from { transform: translateX(100%); }
+      to { transform: translateX(0); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .drawer[open] { animation: none; }
+      .page { transition: none; }
+    }
+
+    .drawer-inner { padding: 24px; display: flex; flex-direction: column; gap: 18px; }
+    .drawer-head { display: flex; justify-content: space-between; align-items: center; }
+    .drawer-head h2 { margin: 0; font-size: 22px; font-weight: 500; }
+
+    #entry-form { display: flex; flex-direction: column; gap: 18px; }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 14px;
+      color: var(--muted);
+    }
+    .row { display: flex; flex-wrap: wrap; gap: 12px; }
+    .row .field { flex: 1 1 120px; }
+
+    input, select {
+      height: 46px;
+      padding: 0 14px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      font: 16px var(--sans);
+      color: var(--ink);
+      background: var(--surface);
+      width: 100%;
+    }
+    input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .amount-input { height: 56px; font-size: 26px; font-weight: 500; }
+
+    /* Money in / Money out */
+    .segmented {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 4px;
+      padding: 4px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+    }
+    .segmented button { background: transparent; color: var(--muted); }
+    .segmented button[aria-pressed="true"] { background: var(--ink); color: #ffffff; }
+
+    .span-types { display: flex; width: 100%; }
+    .span-types button { flex: 1; }
+
+    fieldset { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+    legend { padding: 0; margin-bottom: 8px; font-size: 14px; color: var(--muted); }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip {
+      height: 40px;
+      background: var(--surface);
+      color: var(--ink);
+      border: 1px solid var(--border);
+      padding: 0 14px;
+    }
+    .chip[aria-pressed="true"] {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #ffffff;
+    }
+    .hint { font-size: 13px; color: var(--muted); margin: 0; }
+
+    .save-row { position: sticky; bottom: 0; background: var(--surface); padding: 12px 0 4px; }
+    .save-row button { width: 100%; height: 50px; font-size: 16px; }
   </style>
 </head>
 <body>
@@ -295,54 +342,8 @@
       <button type="button" id="open-entry">+ Add entry</button>
     </header>
 
-    <section id="entry-panel" class="card" hidden>
-      <div class="panel-head">
-        <h2>Add entry</h2>
-        <button type="button" id="close-entry" class="secondary">Close</button>
-      </div>
-
-      <form id="entry-form">
-        <div class="segmented" role="group" aria-label="Entry type">
-          <button type="button" id="type-income" aria-pressed="true">Money in</button>
-          <button type="button" id="type-cost" aria-pressed="false">Money out</button>
-        </div>
-
-        <label class="field">
-          Amount (USD)
-          <input type="number" id="entry-amount" class="amount-input" min="0" step="0.01" placeholder="0.00" required>
-        </label>
-
-        <div class="row">
-          <label class="field">
-            Which month is this for?
-            <select id="entry-month"></select>
-          </label>
-          <label class="field">
-            Year
-            <select id="entry-year"></select>
-          </label>
-        </div>
-
-        <fieldset>
-          <legend id="category-legend">Where did it come from?</legend>
-          <div class="chips" id="category-chips"></div>
-          <label class="field" id="other-field" hidden>
-            Name it
-            <input type="text" id="other-name" placeholder="e.g. Merch, Live event, Grant">
-            <span class="hint">It shows up in your reports under this name.</span>
-          </label>
-        </fieldset>
-
-        <label class="field">
-          Note (optional)
-          <input type="text" id="entry-note" placeholder="e.g. Sponsor name">
-        </label>
-
-        <button type="submit" id="save-entry">Save income</button>
-      </form>
-    </section>
     <div class="period-bar">
-      <div class="period-types" role="group" aria-label="Period type">
+      <div class="segmented-pill period-types" role="group" aria-label="Period type">
         <button type="button" data-type="month" aria-pressed="false">Month</button>
         <button type="button" data-type="quarter" aria-pressed="true">Quarter</button>
         <button type="button" data-type="year" aria-pressed="false">Year</button>
@@ -360,7 +361,8 @@
       <div class="tile"><span class="tile-label">Profit</span><span class="tile-value" id="tile-profit">—</span><span class="tile-change" id="change-profit"></span></div>
       <div class="tile"><span class="tile-label">Return per $1 spent</span><span class="tile-value" id="tile-return">—</span><span class="tile-change" id="change-return"></span></div>
     </div>
-        <section class="card">
+
+    <section class="card">
       <div class="card-head">
         <h2 id="chart-title">By month</h2>
         <div class="legend">
@@ -371,7 +373,7 @@
       <div class="chart-scroll">
         <div class="chart" id="month-chart"></div>
       </div>
-      <p class="hint muted">Click a month to see it on its own.</p>
+      <p class="chart-hint">Click a month to see it on its own.</p>
     </section>
 
     <div class="split">
@@ -384,12 +386,83 @@
         <div id="cost-breakdown"></div>
       </section>
     </div>
+
     <section class="card">
       <h2 id="entries-title">Entries</h2>
       <div id="entries-list"></div>
     </section>
 
   </div>
+
+  <!-- Add entry: a drawer that slides in from the right -->
+  <dialog id="entry-drawer" class="drawer" aria-labelledby="drawer-title">
+    <div class="drawer-inner">
+      <div class="drawer-head">
+        <h2 id="drawer-title">Add entry</h2>
+        <button type="button" id="close-entry" class="secondary">Close</button>
+      </div>
+
+      <form id="entry-form">
+        <div class="segmented" role="group" aria-label="Entry type">
+          <button type="button" id="type-income" aria-pressed="true">Money in</button>
+          <button type="button" id="type-cost" aria-pressed="false">Money out</button>
+        </div>
+
+        <label class="field">
+          Amount (USD)
+          <input type="number" id="entry-amount" class="amount-input" min="0" step="0.01" placeholder="0.00" required>
+        </label>
+
+        <fieldset>
+          <legend>This is for</legend>
+          <div class="segmented-pill span-types" role="group" aria-label="Entry covers">
+            <button type="button" data-span="1" aria-pressed="true">A month</button>
+            <button type="button" data-span="3" aria-pressed="false">A quarter</button>
+            <button type="button" data-span="12" aria-pressed="false">A year</button>
+          </div>
+          <div class="row">
+            <label class="field" id="month-field">
+              Month
+              <select id="entry-month"></select>
+            </label>
+            <label class="field" id="quarter-field" hidden>
+              Quarter
+              <select id="entry-quarter">
+                <option value="1">Q1 · Jan–Mar</option>
+                <option value="2">Q2 · Apr–Jun</option>
+                <option value="3">Q3 · Jul–Sep</option>
+                <option value="4">Q4 · Oct–Dec</option>
+              </select>
+            </label>
+            <label class="field">
+              Year
+              <select id="entry-year"></select>
+            </label>
+          </div>
+          <p class="hint" id="spread-hint"></p>
+        </fieldset>
+
+        <fieldset>
+          <legend id="category-legend">Where did it come from?</legend>
+          <div class="chips" id="category-chips"></div>
+          <label class="field" id="other-field" hidden>
+            Name it
+            <input type="text" id="other-name" placeholder="e.g. Merch, Live event, Grant">
+            <span class="hint">It shows up in your reports under this name.</span>
+          </label>
+        </fieldset>
+
+        <label class="field">
+          Note (optional)
+          <input type="text" id="entry-note" placeholder="e.g. Sponsor name">
+        </label>
+
+        <div class="save-row">
+          <button type="submit" id="save-entry">Save income</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
 
   <script src="app.js"></script>
 </body>
