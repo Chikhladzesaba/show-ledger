@@ -149,12 +149,23 @@ const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Se
 // ===== Saving and loading =====
 
 function loadData() {
+  const empty = {
+    entries: [], series: [],
+    channels: [{ id: 'main', name: 'My channel' }],
+    settings: { mainCurrency: 'USD', gelPerUsd: 0, activeChannel: 'all' }
+  };
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
       const entries = parsed.entries || [];
-      // Move entries saved under old stream names to the new names
+      const series = parsed.series || [];
+      const channels = parsed.channels && parsed.channels.length ? parsed.channels : empty.channels;
+      const settings = Object.assign({}, empty.settings, parsed.settings || {});
+      const firstChannel = channels[0].id;
+
+      // Move entries saved under old stream names to the new names,
+      // and fill in fields that older versions didn't have
       entries.forEach(e => {
         const renamed = e.type === 'income' ? RENAMED_STREAMS[e.category] : null;
         if (renamed) {
@@ -164,13 +175,19 @@ function loadData() {
         if (e.subtype === undefined) e.subtype = '';
         if (e.brand === undefined) e.brand = '';
         if (!e.status) e.status = 'paid';
+        if (!e.currency) e.currency = 'USD';
+        if (!e.channelId) e.channelId = firstChannel;
       });
-      return { entries: entries, series: parsed.series || [] };
+      series.forEach(s => {
+        if (!s.currency) s.currency = 'USD';
+        if (!s.channelId) s.channelId = firstChannel;
+      });
+      return { entries, series, channels, settings };
     }
   } catch (error) {
     console.error('Could not load saved data:', error);
   }
-  return { entries: [], series: [] };
+  return empty;
 }
 
 function saveData() {
@@ -186,17 +203,61 @@ let data = loadData();
 
 // ===== Small helpers =====
 
-// 1234.5 -> $1,234.50
-function formatUSD(amount) {
-  return '$' + amount.toLocaleString('en-US', {
+// ===== Currencies =====
+
+const CURRENCY_SYMBOLS = { USD: '$', GEL: '₾' };
+
+function mainCurrency() {
+  return data.settings.mainCurrency;
+}
+
+function currencySymbol(currency) {
+  return CURRENCY_SYMBOLS[currency || mainCurrency()];
+}
+
+// 1234.5, 'GEL' -> ₾1,234.50
+function formatIn(amount, currency) {
+  return currencySymbol(currency) + amount.toLocaleString('en-US', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   });
 }
 
-// Like formatUSD, but shows a minus for negative numbers: −$50.00
+// In the creator's main currency
+function formatMain(amount) {
+  return formatIn(amount, mainCurrency());
+}
+
+// Convert between USD and GEL with a rate (GEL per 1 USD)
+function convert(amount, from, to, gelPerUsd) {
+  if (from === to) return amount;
+  if (!(gelPerUsd > 0)) return amount;          // no rate known: leave as is
+  return from === 'USD' ? amount * gelPerUsd : amount / gelPerUsd;
+}
+
+// An entry's full amount in the main currency, using the rate typed for it
+function valueInMain(entry) {
+  const rate = entry.gelPerUsd || data.settings.gelPerUsd;
+  return convert(entry.amount, entry.currency || 'USD', mainCurrency(), rate);
+}
+
+// ===== Channels =====
+
+function channelName(id) {
+  const channel = data.channels.find(c => c.id === id);
+  return channel ? channel.name : '';
+}
+
+// The entries of the chosen channel (or all of them)
+function visibleEntries() {
+  const active = data.settings.activeChannel;
+  if (active === 'all' || !data.channels.some(c => c.id === active)) return data.entries;
+  return data.entries.filter(e => e.channelId === active);
+}
+
+// Like formatMain, but shows a minus for negative numbers: −$50.00
 function formatMoney(amount) {
-  return (amount < 0 ? '−' : '') + formatUSD(Math.abs(amount));
+  return (amount < 0 ? '−' : '') + formatMain(Math.abs(amount));
 }
 
 function escapeHtml(text) {
@@ -241,7 +302,7 @@ function entryMonths(entry) {
 function amountIn(entry, months) {
   const covered = entryMonths(entry);
   const inside = covered.filter(key => months.includes(key)).length;
-  return entry.amount / covered.length * inside;
+  return valueInMain(entry) / covered.length * inside;
 }
 
 // Total of one type ('income' or 'cost') inside a list of months
@@ -251,7 +312,7 @@ function isPaid(entry) {
 }
 
 function totalIn(type, months) {
-  return data.entries
+  return visibleEntries()
     .filter(e => e.type === type && isPaid(e))
     .reduce((sum, e) => sum + amountIn(e, months), 0);
 }
@@ -294,6 +355,7 @@ function generateRecurring() {
       data.entries.push({
         id: newId(), type: s.type, amount: s.amount, month: month, span: 1,
         category: s.category, subtype: s.subtype, brand: s.brand, note: s.note,
+        currency: s.currency || 'USD', gelPerUsd: s.gelPerUsd || 0, channelId: s.channelId,
         status: 'expected', seriesId: s.id, episodeId: ''
       });
       added++;
@@ -416,17 +478,19 @@ function renderOverview() {
   document.getElementById('period-label').innerHTML =
     label.sub ? `${label.main} <span>· ${label.sub}</span>` : label.main;
 
+  document.getElementById('return-label').textContent = `Return per ${currencySymbol()}1 spent`;
+
   // This period vs the one before
   const now = totalsFor(periodMonths(periodType, anchor));
   const prevAnchor = shiftAnchor(periodType, anchor, -1);
   const before = totalsFor(periodMonths(periodType, prevAnchor));
   const prevName = periodLabel(periodType, prevAnchor).main;
 
-  setTile('income', formatUSD(now.income), '',
+  setTile('income', formatMain(now.income), '',
     changeText(now.income, before.income, prevName), trendClass(now.income, before.income));
 
   // Costs going up isn't automatically good or bad, so no color
-  setTile('costs', formatUSD(now.costs), '',
+  setTile('costs', formatMain(now.costs), '',
     changeText(now.costs, before.costs, prevName), '');
 
   setTile('profit', formatMoney(now.profit), now.profit < 0 ? 'loss' : (now.profit > 0 ? 'profit' : ''),
@@ -435,12 +499,12 @@ function renderOverview() {
   if (now.ret === null) {
     setTile('return', '—', '', 'No costs in this period', '');
   } else if (before.ret === null) {
-    setTile('return', '$' + now.ret.toFixed(2), '', `— vs ${prevName}`, '');
+    setTile('return', currencySymbol() + now.ret.toFixed(2), '', `— vs ${prevName}`, '');
   } else {
     const diff = now.ret - before.ret;
     const arrow = diff > 0 ? '↑' : diff < 0 ? '↓' : '→';
-    setTile('return', '$' + now.ret.toFixed(2), '',
-      `${arrow} $${Math.abs(diff).toFixed(2)} vs ${prevName}`, trendClass(now.ret, before.ret));
+    setTile('return', currencySymbol() + now.ret.toFixed(2), '',
+      `${arrow} ${currencySymbol()}${Math.abs(diff).toFixed(2)} vs ${prevName}`, trendClass(now.ret, before.ret));
   }
 }
 
@@ -493,7 +557,7 @@ function renderChart() {
     const isSelected = selected.includes(m.key);
     return `
       <button type="button" class="month-col ${isSelected ? 'selected' : 'dim'}" data-month="${m.key}"
-        aria-label="${m.name} ${year}: income ${formatUSD(m.income)}, costs ${formatUSD(m.costs)}. Show this month.">
+        aria-label="${m.name} ${year}: income ${formatMain(m.income)}, costs ${formatMain(m.costs)}. Show this month.">
         <span class="bars">${bar(m.income, 'income')}${bar(m.costs, 'cost')}</span>
         <span>${m.name}</span>
       </button>`;
@@ -515,7 +579,7 @@ document.getElementById('month-chart').addEventListener('click', function (event
 
 function groupByCategory(type, months) {
   const groups = {};
-  for (const entry of data.entries) {
+  for (const entry of visibleEntries()) {
     if (entry.type !== type || !isPaid(entry)) continue;
     const amount = amountIn(entry, months);
     if (amount === 0) continue;
@@ -556,14 +620,14 @@ function renderBreakdown(elementId, type) {
     // Sub-type line, e.g. "YouTube $500 · Facebook $100" (only when something is specified)
     const specified = g.subs.some(s => s.name !== 'Not specified');
     const subLine = specified
-      ? `<p class="sub-line">${g.subs.map(s => `${escapeHtml(s.name)} ${formatUSD(s.total)}`).join(' · ')}</p>`
+      ? `<p class="sub-line">${g.subs.map(s => `${escapeHtml(s.name)} ${formatMain(s.total)}`).join(' · ')}</p>`
       : '';
 
     return `
       <div class="stream">
         <div class="stream-row">
           <span>${escapeHtml(g.name)}${own}</span>
-          <span>${formatUSD(g.total)} · ${percent}%</span>
+          <span>${formatMain(g.total)} · ${percent}%</span>
         </div>
         <div class="bar"><div class="bar-fill ${type === 'cost' ? 'cost' : ''}" style="width: ${percent}%"></div></div>
         ${subLine}
@@ -583,6 +647,7 @@ let selectedCategory = 'Platform revenue';
 let selectedSub = 'YouTube';              // '' = none picked
 let entrySpan = 1;                        // 1 = a month, 3 = a quarter, 12 = a year
 let entryStatus = 'paid';                 // 'paid' or 'expected'
+let entryCurrency = 'USD';                // the currency this entry was paid in
 let editingId = null;                     // the id of the entry being edited, or null when adding
 let beforeEdit = null;                    // the form choices to bring back after editing
 let repeatsWhenOpened = false;            // the "Repeats" box when the edit started
@@ -729,7 +794,7 @@ function renderSpreadHint() {
   if (entrySpan === 1) {
     hint.textContent = '';
   } else if (amount > 0) {
-    hint.textContent = `Spread evenly: ${formatUSD(amount / entrySpan)} per month.`;
+    hint.textContent = `Spread evenly: ${formatIn(amount / entrySpan, entryCurrency)} per month.`;
   } else {
     hint.textContent = `The amount is spread evenly across ${entrySpan} months.`;
   }
@@ -816,7 +881,10 @@ function openForNew() {
     clearEntryFields();
   }
   syncFormToView();
+  document.getElementById('entry-rate').value = data.settings.gelPerUsd || '';
+  fillChannelSelect(data.settings.activeChannel !== 'all' ? data.settings.activeChannel : lastChannel);
   renderTypeToggle();
+  renderCurrency();
   showDrawer();
 }
 
@@ -835,7 +903,7 @@ function ensureYearOption(year) {
 function openForEdit(entry) {
   // Remember the choices from before, to restore them when editing ends
   if (!editingId) {
-    beforeEdit = { entryType, selectedCategory, selectedSub, entrySpan, entryStatus };
+    beforeEdit = { entryType, selectedCategory, selectedSub, entrySpan, entryStatus, entryCurrency };
   }
   editingId = entry.id;
   entryType = entry.type;
@@ -870,6 +938,12 @@ function openForEdit(entry) {
   document.getElementById('entry-brand').value = entry.brand || '';
   document.getElementById('entry-note').value = entry.note || '';
 
+  // Currency, rate and channel
+  entryCurrency = entry.currency || 'USD';
+  document.getElementById('entry-rate').value = entry.gelPerUsd || data.settings.gelPerUsd || '';
+  fillChannelSelect(entry.channelId);
+  renderCurrency();
+
   // Status and repeating
   entryStatus = entry.status || 'paid';
   repeatsWhenOpened = repeatsAfter(entry);
@@ -896,6 +970,7 @@ drawer.addEventListener('close', function () {
       selectedSub = beforeEdit.selectedSub;
       entrySpan = beforeEdit.entrySpan;
       entryStatus = beforeEdit.entryStatus;
+      entryCurrency = beforeEdit.entryCurrency;
       beforeEdit = null;
     }
     renderChips();
@@ -913,6 +988,21 @@ document.getElementById('entry-form').addEventListener('submit', function (event
 
   const amount = Number(document.getElementById('entry-amount').value);
   if (!(amount > 0)) return;
+
+  // A rate is needed when the entry isn't in the main currency
+  const typedRate = Number(document.getElementById('entry-rate').value);
+  if (entryCurrency !== mainCurrency() && !(typedRate > 0)) {
+    const hint = document.getElementById('convert-hint');
+    hint.textContent = 'Please type the rate, e.g. 2.70, so this can be converted.';
+    hint.classList.add('error');
+    document.getElementById('entry-rate').focus();
+    return;
+  }
+  const gelPerUsd = typedRate > 0 ? typedRate : (data.settings.gelPerUsd || 0);
+  if (typedRate > 0) data.settings.gelPerUsd = typedRate;   // remember it for next time
+
+  const channelId = document.getElementById('entry-channel').value || data.channels[0].id;
+  lastChannel = channelId;
 
   const year = Number(document.getElementById('entry-year').value);
   let firstMonth = 1;
@@ -938,14 +1028,18 @@ document.getElementById('entry-form').addEventListener('submit', function (event
     subtype: subtype,
     brand: brand,
     note: document.getElementById('entry-note').value.trim(),
-    status: entryStatus
+    status: entryStatus,
+    currency: entryCurrency,
+    gelPerUsd: gelPerUsd,
+    channelId: channelId
   };
   const repeats = entrySpan === 1 && document.getElementById('entry-repeats').checked;
 
   // The details a series copies into each new month
   const template = () => ({
     type: fields.type, amount: fields.amount, category: fields.category,
-    subtype: fields.subtype, brand: fields.brand, note: fields.note
+    subtype: fields.subtype, brand: fields.brand, note: fields.note,
+    currency: fields.currency, gelPerUsd: fields.gelPerUsd, channelId: fields.channelId
   });
   const startSeries = entry => {
     const s = Object.assign({ id: newId(), start: entry.month, end: '', skipped: [] }, template());
@@ -1035,7 +1129,7 @@ function renderEntries() {
     return;
   }
 
-  const shown = data.entries
+  const shown = visibleEntries()
     .filter(e => showPendingOnly ? e.status === 'expected' : amountIn(e, months) > 0)
     .sort((a, b) => b.month.localeCompare(a.month));   // newest first
 
@@ -1051,11 +1145,18 @@ function renderEntries() {
     const isIncome = entry.type === 'income';
     const expected = entry.status === 'expected';
     const part = showPendingOnly ? entry.amount : amountIn(entry, months);
-    const isPartial = Math.abs(part - entry.amount) > 0.005;
+    const isPartial = Math.abs(part - valueInMain(entry)) > 0.005;   // only part of a quarter/year
     const sign = isIncome ? '+' : '−';
-    const details = [entry.brand ? `<strong>${escapeHtml(entry.brand)}</strong>` : '', escapeHtml(entry.note)]
+    const showChannel = data.settings.activeChannel === 'all' && data.channels.length > 1;
+    const channelTag = showChannel ? `<span class="channel-tag">${escapeHtml(channelName(entry.channelId))}</span>` : '';
+    const details = channelTag + [entry.brand ? `<strong>${escapeHtml(entry.brand)}</strong>` : '', escapeHtml(entry.note)]
       .filter(Boolean)
       .join(' · ');
+
+    // Paid in another currency: show the original amount and its rate
+    const foreign = (entry.currency || 'USD') !== mainCurrency()
+      ? `<span class="small">${formatIn(entry.amount, entry.currency)} · 1 USD = ${entry.gelPerUsd || data.settings.gelPerUsd} GEL</span>`
+      : '';
 
     let badges = `<span class="badge ${entry.type}">${isIncome ? 'Income' : 'Cost'}</span>`;
     if (isOverdue(entry)) badges += '<span class="badge overdue">Overdue</span>';
@@ -1070,7 +1171,7 @@ function renderEntries() {
         <td>${badges}</td>
         <td>${escapeHtml(formatCategory(entry))}${repeating}</td>
         <td class="muted">${details}</td>
-        <td class="number ${isIncome ? 'money-in' : ''}">${sign}${formatUSD(part)}${isPartial ? `<span class="small">of ${formatUSD(entry.amount)}</span>` : ''}</td>
+        <td class="number ${isIncome ? 'money-in' : ''}">${sign}${formatMain(part)}${isPartial ? `<span class="small">of ${formatMain(valueInMain(entry))}</span>` : ''}${foreign}</td>
         <td class="number row-actions">${markPaid}<button class="edit" data-id="${entry.id}">Edit</button><button class="delete" data-id="${entry.id}">Delete</button></td>
       </tr>`;
   }
@@ -1110,7 +1211,7 @@ document.getElementById('entries-list').addEventListener('click', function (even
     const label = entry.type === 'income' ? 'income' : 'cost';
     const series = findSeries(entry);
     const extra = series ? '\n\nOnly this month is deleted. To stop the monthly copies, edit an entry and untick "Repeats every month".' : '';
-    if (confirm(`Delete this ${formatUSD(entry.amount)} ${label} (${formatCategory(entry)}, ${formatEntryPeriod(entry)})? This cannot be undone.${extra}`)) {
+    if (confirm(`Delete this ${formatIn(entry.amount, entry.currency)} ${label} (${formatCategory(entry)}, ${formatEntryPeriod(entry)})? This cannot be undone.${extra}`)) {
       // Don't let the monthly copy come back for this month
       if (series && !series.skipped.includes(entry.month)) series.skipped.push(entry.month);
       data.entries = data.entries.filter(e => e.id !== entry.id);
@@ -1132,7 +1233,7 @@ document.getElementById('entries-back').addEventListener('click', function () {
 // ===== Pending bar: money still owed, and bills still to pay =====
 
 function renderPending() {
-  const pending = data.entries.filter(e => e.status === 'expected');
+  const pending = visibleEntries().filter(e => e.status === 'expected');
   document.getElementById('pending').hidden = pending.length === 0;
   if (pending.length === 0) {
     showPendingOnly = false;
@@ -1142,13 +1243,13 @@ function renderPending() {
   const fill = (type, valueId, noteId) => {
     const list = pending.filter(e => e.type === type);
     const overdue = list.filter(isOverdue);
-    document.getElementById(valueId).textContent = formatUSD(list.reduce((sum, e) => sum + e.amount, 0));
+    document.getElementById(valueId).textContent = formatMain(list.reduce((sum, e) => sum + valueInMain(e), 0));
     const note = document.getElementById(noteId);
     if (list.length === 0) {
       note.textContent = 'Nothing pending';
       note.className = 'pending-note';
     } else if (overdue.length > 0) {
-      note.textContent = `${list.length} pending · ${overdue.length} overdue (${formatUSD(overdue.reduce((sum, e) => sum + e.amount, 0))})`;
+      note.textContent = `${list.length} pending · ${overdue.length} overdue (${formatMain(overdue.reduce((sum, e) => sum + valueInMain(e), 0))})`;
       note.className = 'pending-note overdue';
     } else {
       note.textContent = `${list.length} pending`;
@@ -1165,6 +1266,168 @@ document.getElementById('pending-show').addEventListener('click', function () {
   document.getElementById('entries-title').scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
 
+// ===== Currency in the entry form =====
+
+let lastChannel = '';   // the channel used for the last saved entry
+
+function renderCurrency() {
+  document.querySelectorAll('.currency-types button').forEach(button => {
+    button.setAttribute('aria-pressed', String(button.dataset.currency === entryCurrency));
+  });
+  // The rate is only needed when the entry isn't in the main currency
+  document.getElementById('rate-field').hidden = entryCurrency === mainCurrency();
+  renderConvertHint();
+  renderSpreadHint();
+}
+
+// "= $370.37" under the rate, updated while typing
+function renderConvertHint() {
+  const hint = document.getElementById('convert-hint');
+  hint.classList.remove('error');
+  const amount = Number(document.getElementById('entry-amount').value);
+  const rate = Number(document.getElementById('entry-rate').value);
+  hint.textContent = amount > 0 && rate > 0
+    ? `= ${formatMain(convert(amount, entryCurrency, mainCurrency(), rate))} in your main currency`
+    : 'Type the rate your bank or platform used.';
+}
+
+document.querySelector('.currency-types').addEventListener('click', function (event) {
+  const currency = event.target.dataset.currency;
+  if (!currency) return;
+  entryCurrency = currency;
+  renderCurrency();
+});
+document.getElementById('entry-amount').addEventListener('input', renderConvertHint);
+document.getElementById('entry-rate').addEventListener('input', renderConvertHint);
+
+// The Channel dropdown in the form (only shown with two or more channels)
+function fillChannelSelect(selectedId) {
+  const select = document.getElementById('entry-channel');
+  select.innerHTML = data.channels
+    .map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`)
+    .join('');
+  select.value = data.channels.some(c => c.id === selectedId) ? selectedId : data.channels[0].id;
+  document.getElementById('channel-field').hidden = data.channels.length < 2;
+}
+
+// ===== Channel switcher in the header =====
+
+function renderChannelSwitch() {
+  const wrap = document.getElementById('channel-switch-wrap');
+  const select = document.getElementById('channel-switch');
+  wrap.hidden = data.channels.length < 2;
+  if (!data.channels.some(c => c.id === data.settings.activeChannel)) data.settings.activeChannel = 'all';
+  select.innerHTML = '<option value="all">All channels</option>' + data.channels
+    .map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`)
+    .join('');
+  select.value = data.settings.activeChannel;
+}
+
+document.getElementById('channel-switch').addEventListener('change', function (event) {
+  data.settings.activeChannel = event.target.value;
+  showPendingOnly = false;
+  saveData();
+  renderAll();
+});
+
+// ===== Settings: main currency and channels =====
+
+const settingsDrawer = document.getElementById('settings-drawer');
+
+function renderSettings() {
+  document.querySelectorAll('.main-currency-types button').forEach(button => {
+    button.setAttribute('aria-pressed', String(button.dataset.main === mainCurrency()));
+  });
+  document.getElementById('default-rate').value = data.settings.gelPerUsd || '';
+  const hint = document.getElementById('default-rate-hint');
+  hint.classList.remove('error');
+  hint.textContent = 'Used for entries that have no rate of their own.';
+
+  // One row per channel: rename in place, delete only when it has no entries
+  document.getElementById('channel-list').innerHTML = data.channels.map(c => {
+    const count = data.entries.filter(e => e.channelId === c.id).length;
+    const canDelete = data.channels.length > 1 && count === 0;
+    return `
+      <li>
+        <input type="text" value="${escapeHtml(c.name)}" data-channel="${c.id}" aria-label="Channel name">
+        <span class="count">${count} ${count === 1 ? 'entry' : 'entries'}</span>
+        ${canDelete ? `<button type="button" class="delete" data-delete-channel="${c.id}">Delete</button>` : ''}
+      </li>`;
+  }).join('');
+}
+
+document.getElementById('open-settings').addEventListener('click', function () {
+  renderSettings();
+  settingsDrawer.showModal();
+  document.body.classList.add('drawer-open');
+});
+document.getElementById('close-settings').addEventListener('click', () => settingsDrawer.close());
+settingsDrawer.addEventListener('close', () => document.body.classList.remove('drawer-open'));
+settingsDrawer.addEventListener('click', function (event) {
+  if (event.target === settingsDrawer) settingsDrawer.close();
+});
+
+// Main currency: switching to GEL needs a usual rate for old USD entries
+document.querySelector('.main-currency-types').addEventListener('click', function (event) {
+  const currency = event.target.dataset.main;
+  if (!currency || currency === mainCurrency()) return;
+  if (!(data.settings.gelPerUsd > 0) && data.entries.length > 0) {
+    const hint = document.getElementById('default-rate-hint');
+    hint.textContent = 'Type a usual rate first, so your existing entries can be converted.';
+    hint.classList.add('error');
+    document.getElementById('default-rate').focus();
+    return;
+  }
+  data.settings.mainCurrency = currency;
+  saveData();
+  renderSettings();
+  renderAll();
+});
+
+document.getElementById('default-rate').addEventListener('change', function (event) {
+  const rate = Number(event.target.value);
+  data.settings.gelPerUsd = rate > 0 ? rate : 0;
+  saveData();
+  renderSettings();
+  renderAll();
+});
+
+// Rename a channel when its name field loses focus
+document.getElementById('channel-list').addEventListener('change', function (event) {
+  const id = event.target.dataset.channel;
+  if (!id) return;
+  const channel = data.channels.find(c => c.id === id);
+  const name = event.target.value.trim();
+  if (channel && name) channel.name = name;
+  saveData();
+  renderSettings();
+  renderAll();
+});
+
+document.getElementById('channel-list').addEventListener('click', function (event) {
+  const id = event.target.dataset.deleteChannel;
+  if (!id) return;
+  data.channels = data.channels.filter(c => c.id !== id);
+  saveData();
+  renderSettings();
+  renderAll();
+});
+
+function addChannel() {
+  const input = document.getElementById('new-channel');
+  const name = input.value.trim();
+  if (!name) return;
+  data.channels.push({ id: newId(), name: name });
+  input.value = '';
+  saveData();
+  renderSettings();
+  renderAll();
+}
+document.getElementById('add-channel').addEventListener('click', addChannel);
+document.getElementById('new-channel').addEventListener('keydown', function (event) {
+  if (event.key === 'Enter') addChannel();
+});
+
 // ===== Welcome card: only before the first entry =====
 
 function renderWelcome() {
@@ -1174,6 +1437,7 @@ function renderWelcome() {
 // ===== Start =====
 
 function renderAll() {
+  renderChannelSwitch();
   renderWelcome();
   renderOverview();
   renderPending();
@@ -1184,6 +1448,8 @@ function renderAll() {
 
 generateRecurring();
 fillPeriodSelects();
+fillChannelSelect(data.channels[0].id);
 setType('income');
+entryCurrency = mainCurrency();
 renderSpan();
 renderAll();
