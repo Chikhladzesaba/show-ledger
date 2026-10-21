@@ -1549,9 +1549,11 @@ function fillChannelSelect(selectedId) {
 function renderChannelSwitch() {
   const wrap = document.getElementById('channel-switch-wrap');
   const select = document.getElementById('channel-switch');
-  wrap.hidden = data.channels.length < 2;
+   wrap.hidden = false;
+  const several = data.channels.length >= 2;
   if (!data.channels.some(c => c.id === data.settings.activeChannel)) data.settings.activeChannel = 'all';
-  select.innerHTML = '<option value="all">All channels</option>' + data.channels
+  if (!several && data.settings.activeChannel === 'all' && data.channels.length) data.settings.activeChannel = data.channels[0].id;
+  select.innerHTML = (several ? '<option value="all">All channels</option>' : '') + data.channels
     .map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`)
     .join('');
   select.value = data.settings.activeChannel;
