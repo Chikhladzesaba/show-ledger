@@ -1556,11 +1556,21 @@ function renderChannelSwitch() {
   select.innerHTML = (several ? '<option value="all">All channels</option>' : '') + data.channels
     .map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`)
     .join('');
+    select.innerHTML += '<option value="__add">+ Add channel…</option>';
   select.value = data.settings.activeChannel;
 }
 
 document.getElementById('channel-switch').addEventListener('change', function (event) {
-  data.settings.activeChannel = event.target.value;
+    if (event.target.value === '__add') {
+    const name = (prompt('New channel name:') || '').trim();
+    if (!name) { renderChannelSwitch(); return; }
+    const channel = { id: newId(), name: name };
+    data.channels.push(channel);
+    data.settings.activeChannel = channel.id;
+    renderSettings();
+  } else {
+    data.settings.activeChannel = event.target.value;
+  }
   showPendingOnly = false;
   saveData();
   renderAll();
