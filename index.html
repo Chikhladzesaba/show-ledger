@@ -4,6 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Show Ledger</title>
+
+  <!-- Google Analytics: counts visits only, never the numbers people type -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-505XB5Y7TX"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-505XB5Y7TX');
+  </script>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='16' fill='%23006aff'/><path d='M10 22v-3M16 22v-7M22 22V11' fill='none' stroke='white' stroke-width='3.2' stroke-linecap='round'/></svg>">
   <meta name="description" content="Track your income and costs by month, quarter and year.">
     <meta property="og:title" content="Show Ledger | Free revenue tracker for creators">
@@ -650,7 +659,7 @@
       </ol>
       <div class="welcome-foot">
         <button type="button" id="welcome-start">+ Add your first entry</button>
-        <p>Your numbers stay in this browser. Nothing is sent anywhere.</p>
+        <p>Your numbers stay in this browser. We only count visits, never your numbers.</p>
       </div>
     </section>
 
@@ -791,6 +800,10 @@
           <label class="field">
             <span id="barter-item-label">What did you get?</span>
             <input type="text" id="barter-item" placeholder="e.g. Phone for a review">
+          </label>
+          <label class="field">
+            <span id="barter-from-label">From whom?</span>
+            <input type="text" id="barter-from" list="brand-list" autocomplete="off" placeholder="e.g. a brand, shop or person">
           </label>
           <fieldset>
             <legend>How did you value it?</legend>
