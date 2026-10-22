@@ -828,7 +828,7 @@ function renderSubChips() {
     .join('');
   document.getElementById('sub-other-field').hidden = selectedSub !== 'Other';
 
-  document.getElementById('brand-field').hidden = !definition.brand;
+  document.getElementById('brand-field').hidden = !definition.brand || entryPayment === 'barter';
   document.getElementById('people-fields').hidden = !hasPeopleFields();
   renderPeopleFields();
 
@@ -971,7 +971,7 @@ function showDrawer() {
 
 // Empty the fields that differ between entries
 function clearEntryFields() {
-  ['entry-amount', 'entry-note', 'other-name', 'sub-other-name', 'entry-brand', 'entry-person', 'entry-hours', 'entry-hour-rate', 'barter-item']
+  ['entry-amount', 'entry-note', 'other-name', 'sub-other-name', 'entry-brand', 'entry-person', 'entry-hours', 'entry-hour-rate', 'barter-item', 'barter-from']
     .forEach(id => { document.getElementById(id).value = ''; });
   document.getElementById('entry-repeats').checked = false;
   renderSpreadHint();
@@ -1048,6 +1048,7 @@ function openForEdit(entry, groupIds, scope) {
   entryPayment = entry.payment === 'barter' ? 'barter' : 'cash';
   entryValued = entry.valuedBy === 'rate' ? 'rate' : 'market';
   document.getElementById('barter-item').value = entry.barterItem || '';
+  document.getElementById('barter-from').value = entry.payment === 'barter' ? (entry.brand || '') : '';
 
   // Person and hours (People costs)
   document.getElementById('entry-person').value = entry.person || '';
@@ -1142,7 +1143,10 @@ document.getElementById('entry-form').addEventListener('submit', function (event
   const subtype = selectedSub === 'Other' ? (subOtherName || 'Other') : selectedSub;
 
   const typedBrand = document.getElementById('entry-brand').value.trim();
-  const brand = definition.brand && typedBrand ? matchBrand(typedBrand) : '';
+  const typedFrom = document.getElementById('barter-from').value.trim();
+  const brand = entryPayment === 'barter'
+    ? (typedFrom ? matchBrand(typedFrom) : '')
+    : (definition.brand && typedBrand ? matchBrand(typedBrand) : '');
 
   const fields = {
     type: entryType,
@@ -1253,6 +1257,7 @@ document.getElementById('entry-form').addEventListener('submit', function (event
   entryPayType = 'fixed';
   renderPeopleFields();
   document.getElementById('barter-item').value = '';
+  document.getElementById('barter-from').value = '';
   entryPayment = 'cash';        // barter is the exception, so the next entry starts as cash
   entryValued = 'market';
   renderPayment();
@@ -2173,6 +2178,8 @@ function renderPayment() {
   document.getElementById('amount-label').textContent = barter ? 'Estimated value' : 'Amount';
   document.getElementById('barter-item-label').textContent = isIncome ? 'What did you get?' : 'What did you give?';
   document.getElementById('barter-item').placeholder = isIncome ? 'e.g. Phone for a review' : 'e.g. A shoutout for the studio';
+  document.getElementById('barter-from-label').textContent = isIncome ? 'From whom?' : 'To whom?';
+  document.getElementById('brand-field').hidden = !currentDefinition().brand || barter;
   document.getElementById('valued-hint').textContent = entryValued === 'market'
     ? (isIncome ? 'What it would cost to buy it yourself.' : 'What you would have paid in cash.')
     : (isIncome ? 'What you would normally charge in cash for this work.' : 'What you would normally charge for what you gave.');
@@ -2182,6 +2189,10 @@ document.querySelector('.payment-types').addEventListener('click', function (eve
   const payment = event.target.dataset.payment;
   if (!payment) return;
   entryPayment = payment;
+  // Most barter is a product for a review, so start from Sponsorships
+  if (payment === 'barter' && entryType === 'income' && selectedCategory === 'Platform revenue') {
+    selectCategory('Sponsorships');
+  }
   renderPayment();
 });
 document.querySelector('.valued-types').addEventListener('click', function (event) {
