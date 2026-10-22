@@ -148,11 +148,20 @@ const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Se
 
 // ===== Saving and loading =====
 
+// Older versions stored one rate: GEL per 1 USD. Now each entry keeps
+// "1 <its currency> = rate <rateTo>", so any currency can be used.
+function upgradeRate(e) {
+  if (e.rateTo || !(e.gelPerUsd > 0)) { delete e.gelPerUsd; return; }
+  if (e.currency === 'USD') { e.rate = e.gelPerUsd; e.rateTo = 'GEL'; }
+  else if (e.currency === 'GEL') { e.rate = 1 / e.gelPerUsd; e.rateTo = 'USD'; }
+  delete e.gelPerUsd;
+}
+
 function loadData() {
   const empty = {
     entries: [], series: [], people: [],
     channels: [{ id: 'main', name: 'My channel' }],
-    settings: { mainCurrency: 'USD', gelPerUsd: 0, activeChannel: 'all', taxRate: 0, taxBase: 'income' }
+    settings: { mainCurrency: 'USD', rates: {}, activeChannel: 'all', taxRate: 0, taxBase: 'income' }
   };
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -177,12 +186,17 @@ function loadData() {
         if (!e.status) e.status = 'paid';
         if (!e.currency) e.currency = 'USD';
         if (!e.channelId) e.channelId = firstChannel;
+        upgradeRate(e);
       });
       const people = parsed.people || [];
       series.forEach(s => {
         if (!s.currency) s.currency = 'USD';
         if (!s.channelId) s.channelId = firstChannel;
+        upgradeRate(s);
       });
+      if (!settings.rates) settings.rates = {};
+      if (settings.gelPerUsd > 0 && !settings.rates['USD>GEL']) settings.rates['USD>GEL'] = settings.gelPerUsd;
+      delete settings.gelPerUsd;
       return { entries, series, channels, settings, people };
     }
   } catch (error) {
@@ -206,7 +220,8 @@ let data = loadData();
 
 // ===== Currencies =====
 
-const CURRENCY_SYMBOLS = { USD: '$', GEL: '₾' };
+const CURRENCIES = ['USD', 'GEL', 'EUR'];
+const CURRENCY_SYMBOLS = { USD: '$', GEL: '₾', EUR: '€' };
 
 function mainCurrency() {
   return data.settings.mainCurrency;
@@ -229,17 +244,46 @@ function formatMain(amount) {
   return formatIn(amount, mainCurrency());
 }
 
-// Convert between USD and GEL with a rate (GEL per 1 USD)
-function convert(amount, from, to, gelPerUsd) {
+// The usual rate saved in Settings: 1 <from> = ? <to>. 0 if unknown.
+function usualRate(from, to) {
+  if (from === to) return 1;
+  const rates = data.settings.rates || {};
+  if (rates[from + '>' + to] > 0) return rates[from + '>' + to];
+  if (rates[to + '>' + from] > 0) return 1 / rates[to + '>' + from];
+  return 0;
+}
+
+// Remember a usual rate (one direction only, so the two never disagree)
+function setUsualRate(from, to, rate) {
+  if (!data.settings.rates) data.settings.rates = {};
+  delete data.settings.rates[to + '>' + from];
+  if (rate > 0) data.settings.rates[from + '>' + to] = rate;
+  else delete data.settings.rates[from + '>' + to];
+}
+
+// Convert with a rate (1 <from> = rate <to>), or the usual rate if none is given
+function convert(amount, from, to, rate) {
   if (from === to) return amount;
-  if (!(gelPerUsd > 0)) return amount;          // no rate known: leave as is
-  return from === 'USD' ? amount * gelPerUsd : amount / gelPerUsd;
+  const used = rate > 0 ? rate : usualRate(from, to);
+  return used > 0 ? amount * used : amount;      // no rate known: leave as is
 }
 
 // An entry's full amount in the main currency, using the rate typed for it
 function valueInMain(entry) {
-  const rate = entry.gelPerUsd || data.settings.gelPerUsd;
-  return convert(entry.amount, entry.currency || 'USD', mainCurrency(), rate);
+  const main = mainCurrency();
+  const from = entry.currency || 'USD';
+  if (from === main) return entry.amount;
+  if (!entry.rateTo) return convert(entry.amount, from, main, 0);
+  // Its own rate first, then the usual rate if the main currency changed since
+  const inRateTo = convert(entry.amount, from, entry.rateTo, entry.rate);
+  return convert(inRateTo, entry.rateTo, main, 0);
+}
+
+// Rate to show in the form: the entry's own, else the usual one
+function rateForForm(currency, entry) {
+  if (entry && entry.rateTo === mainCurrency() && entry.rate > 0) return entry.rate;
+  const usual = usualRate(currency, mainCurrency());
+  return usual > 0 ? Number(usual.toFixed(4)) : '';
 }
 
 // ===== Channels =====
@@ -367,7 +411,7 @@ function generateRecurring() {
       data.entries.push({
         id: newId(), type: s.type, amount: s.amount, month: month, span: 1,
         category: s.category, subtype: s.subtype, brand: s.brand, note: s.note,
-        currency: s.currency || 'USD', gelPerUsd: s.gelPerUsd || 0, channelId: s.channelId,
+        currency: s.currency || 'USD', rate: s.rate || 0, rateTo: s.rateTo || '', channelId: s.channelId,
         person: s.person || '', hours: s.hours || 0, payType: s.payType || '', hourlyRate: s.hourlyRate || 0,
         payment: s.payment || 'cash', barterItem: s.barterItem || '', valuedBy: s.valuedBy || '',
         status: 'expected', seriesId: s.id, episodeId: ''
@@ -940,7 +984,7 @@ function openForNew() {
     clearEntryFields();
   }
   syncFormToView();
-  document.getElementById('entry-rate').value = data.settings.gelPerUsd || '';
+  document.getElementById('entry-rate').value = rateForForm(entryCurrency);
   fillChannelSelect(data.settings.activeChannel !== 'all' ? data.settings.activeChannel : lastChannel);
   renderTypeToggle();
   renderCurrency();
@@ -1013,7 +1057,7 @@ function openForEdit(entry, groupIds, scope) {
 
   // Currency, rate and channel
   entryCurrency = entry.currency || 'USD';
-  document.getElementById('entry-rate').value = entry.gelPerUsd || data.settings.gelPerUsd || '';
+  document.getElementById('entry-rate').value = rateForForm(entryCurrency, entry);
   fillChannelSelect(entry.channelId);
   renderCurrency();
 
@@ -1073,13 +1117,14 @@ document.getElementById('entry-form').addEventListener('submit', function (event
   const typedRate = Number(document.getElementById('entry-rate').value);
   if (entryCurrency !== mainCurrency() && !(typedRate > 0)) {
     const hint = document.getElementById('convert-hint');
-    hint.textContent = 'Please type the rate, e.g. 2.70, so this can be converted.';
+    hint.textContent = 'Please type the rate, so this can be converted.';
     hint.classList.add('error');
     document.getElementById('entry-rate').focus();
     return;
   }
-  const gelPerUsd = typedRate > 0 ? typedRate : (data.settings.gelPerUsd || 0);
-  if (typedRate > 0) data.settings.gelPerUsd = typedRate;   // remember it for next time
+  const foreign = entryCurrency !== mainCurrency();
+  const rate = foreign ? typedRate : 0;
+  if (foreign) setUsualRate(entryCurrency, mainCurrency(), typedRate);   // remember it for next time
 
   const channelId = document.getElementById('entry-channel').value || data.channels[0].id;
   lastChannel = channelId;
@@ -1110,7 +1155,8 @@ document.getElementById('entry-form').addEventListener('submit', function (event
     note: document.getElementById('entry-note').value.trim(),
     status: entryStatus,
     currency: entryCurrency,
-    gelPerUsd: gelPerUsd,
+    rate: rate,
+    rateTo: foreign ? mainCurrency() : '',
     channelId: channelId,
     ...peopleFieldsForSave(),
     payment: entryPayment,
@@ -1124,7 +1170,7 @@ document.getElementById('entry-form').addEventListener('submit', function (event
   const template = () => ({
     type: fields.type, amount: fields.amount, category: fields.category,
     subtype: fields.subtype, brand: fields.brand, note: fields.note,
-    currency: fields.currency, gelPerUsd: fields.gelPerUsd, channelId: fields.channelId,
+    currency: fields.currency, rate: fields.rate, rateTo: fields.rateTo, channelId: fields.channelId,
     person: fields.person, hours: fields.hours, payType: fields.payType, hourlyRate: fields.hourlyRate,
     payment: fields.payment, barterItem: fields.barterItem, valuedBy: fields.valuedBy
   });
@@ -1170,7 +1216,7 @@ document.getElementById('entry-form').addEventListener('submit', function (event
   // Editing inside a group: copy the details to the other chosen entries.
   // Each keeps its own month, period and Paid/Expected status.
   if (wasEditing) {
-    const shared = ['type', 'amount', 'category', 'subtype', 'brand', 'note', 'currency', 'gelPerUsd',
+    const shared = ['type', 'amount', 'category', 'subtype', 'brand', 'note', 'currency', 'rate', 'rateTo',
       'channelId', 'person', 'hours', 'payType', 'hourlyRate', 'payment', 'barterItem', 'valuedBy'];
     for (const id of scopeTargets()) {
       if (id === editingId) continue;
@@ -1282,7 +1328,7 @@ function entryRow(entry, months, groupKey) {
 
   // Paid in another currency: show the original amount and its rate
   const foreign = (entry.currency || 'USD') !== mainCurrency()
-    ? `<span class="small">${formatIn(entry.amount, entry.currency)} · 1 USD = ${entry.gelPerUsd || data.settings.gelPerUsd} GEL</span>`
+    ? `<span class="small">${formatIn(entry.amount, entry.currency)}${entry.rateTo ? ` · 1 ${entry.currency} = ${Number(entry.rate.toFixed(4))} ${entry.rateTo}` : ''}</span>`
     : '';
 
   let badges = `<span class="badge ${entry.type}">${isIncome ? 'Income' : 'Cost'}</span>`;
@@ -1510,6 +1556,8 @@ function renderCurrency() {
   });
   // The rate is only needed when the entry isn't in the main currency
   document.getElementById('rate-field').hidden = entryCurrency === mainCurrency();
+  document.getElementById('rate-from').textContent = '1 ' + entryCurrency + ' =';
+  document.getElementById('rate-to').textContent = mainCurrency();
   renderConvertHint();
   renderSpreadHint();
 }
@@ -1529,6 +1577,7 @@ document.querySelector('.currency-types').addEventListener('click', function (ev
   const currency = event.target.dataset.currency;
   if (!currency) return;
   entryCurrency = currency;
+  document.getElementById('entry-rate').value = rateForForm(currency);
   renderCurrency();
 });
 document.getElementById('entry-amount').addEventListener('input', renderConvertHint);
@@ -1584,13 +1633,16 @@ function renderSettings() {
   document.querySelectorAll('.main-currency-types button').forEach(button => {
     button.setAttribute('aria-pressed', String(button.dataset.main === mainCurrency()));
   });
-  document.getElementById('default-rate').value = data.settings.gelPerUsd || '';
+  renderUsualRates();
   document.getElementById('tax-rate').value = data.settings.taxRate || '';
   document.getElementById('tax-base').value = data.settings.taxBase || 'income';
   document.getElementById('tax-barter').checked = Boolean(data.settings.taxBarter);
   const hint = document.getElementById('default-rate-hint');
   hint.classList.remove('error');
-  hint.textContent = 'Used for entries that have no rate of their own.';
+  hint.textContent = missingRates().length
+    ? 'Type the usual rate for ' + missingRates().join(' and ') + ', so all your entries can be converted.'
+    : 'Used when an entry has no rate to your main currency.';
+  hint.classList.toggle('error', missingRates().length > 0);
 
   // One row per channel: rename in place, delete only when it has no entries
   document.getElementById('channel-list').innerHTML = data.channels.map(c => {
@@ -1616,26 +1668,48 @@ settingsDrawer.addEventListener('click', function (event) {
   if (event.target === settingsDrawer) settingsDrawer.close();
 });
 
-// Main currency: switching to GEL needs a usual rate for old USD entries
+// One "1 EUR = [ ] GEL" row for each currency that isn't the main one
+function renderUsualRates() {
+  const main = mainCurrency();
+  document.getElementById('usual-rates').innerHTML = CURRENCIES.filter(c => c !== main).map(c => {
+    const rate = usualRate(c, main);
+    return `
+      <label class="rate-line">
+        <span>1 ${c} =</span>
+        <input type="number" min="0" step="0.0001" data-rate-from="${c}" value="${rate > 0 ? Number(rate.toFixed(4)) : ''}" aria-label="${main} per 1 ${c}">
+        <span>${main}</span>
+      </label>`;
+  }).join('');
+}
+
+// Currencies used by entries that can't be converted to the main currency yet
+function missingRates() {
+  const main = mainCurrency();
+  const missing = new Set();
+  data.entries.forEach(e => {
+    const from = e.currency || 'USD';
+    if (from === main || e.rateTo === main) return;
+    const via = e.rateTo || from;
+    if (!(usualRate(via, main) > 0)) missing.add(via);
+  });
+  return [...missing];
+}
+
+// Main currency: entries in other currencies are converted with their own or the usual rate
 document.querySelector('.main-currency-types').addEventListener('click', function (event) {
   const currency = event.target.dataset.main;
   if (!currency || currency === mainCurrency()) return;
-  if (!(data.settings.gelPerUsd > 0) && data.entries.length > 0) {
-    const hint = document.getElementById('default-rate-hint');
-    hint.textContent = 'Type a usual rate first, so your existing entries can be converted.';
-    hint.classList.add('error');
-    document.getElementById('default-rate').focus();
-    return;
-  }
   data.settings.mainCurrency = currency;
+  entryCurrency = currency;
   saveData();
   renderSettings();
   renderAll();
 });
 
-document.getElementById('default-rate').addEventListener('change', function (event) {
-  const rate = Number(event.target.value);
-  data.settings.gelPerUsd = rate > 0 ? rate : 0;
+document.getElementById('usual-rates').addEventListener('change', function (event) {
+  const from = event.target.dataset.rateFrom;
+  if (!from) return;
+  setUsualRate(from, mainCurrency(), Number(event.target.value));
   saveData();
   renderSettings();
   renderAll();
