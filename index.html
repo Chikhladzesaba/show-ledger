@@ -810,13 +810,14 @@
           <div class="segmented-pill currency-types" role="group" aria-label="Currency">
             <button type="button" data-currency="USD" aria-pressed="true">USD</button>
             <button type="button" data-currency="GEL" aria-pressed="false">GEL</button>
+            <button type="button" data-currency="EUR" aria-pressed="false">EUR</button>
           </div>
         </div>
         <div class="field" id="rate-field" hidden>
           <label class="rate-line" for="entry-rate">
-            <span>1 USD =</span>
-            <input type="number" id="entry-rate" min="0" step="0.0001" placeholder="2.70">
-            <span>GEL</span>
+            <span id="rate-from">1 USD =</span>
+            <input type="number" id="entry-rate" min="0" step="0.0001" placeholder="0.00">
+            <span id="rate-to">GEL</span>
           </label>
           <p class="hint" id="convert-hint"></p>
         </div>
@@ -946,13 +947,11 @@
         <div class="segmented-pill main-currency-types" role="group" aria-label="Main currency">
           <button type="button" data-main="USD" aria-pressed="true">USD ($)</button>
           <button type="button" data-main="GEL" aria-pressed="false">GEL (₾)</button>
+          <button type="button" data-main="EUR" aria-pressed="false">EUR (€)</button>
         </div>
         <p class="hint">Tiles, chart and breakdowns are shown in this currency. Entries in another currency are converted with the rate typed for them.</p>
-        <label class="rate-line" for="default-rate">
-          <span>Usual rate: 1 USD =</span>
-          <input type="number" id="default-rate" min="0" step="0.0001" placeholder="2.70">
-          <span>GEL</span>
-        </label>
+        <p class="hint">Usual rates:</p>
+        <div id="usual-rates"></div>
         <p class="hint" id="default-rate-hint">Used for entries that have no rate of their own.</p>
       </fieldset>
 
