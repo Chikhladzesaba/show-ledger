@@ -4,7 +4,7 @@
 
 **Live app:** chikhladzesaba.github.io/show-ledger
 
-Your numbers stay in your own browser. No account, no server, nothing is sent anywhere.
+Your numbers stay in your own browser. No account, no server. Google Analytics counts visits only; the numbers you type are never sent anywhere.
 
 ---
 
