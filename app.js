@@ -427,7 +427,8 @@ function generateRecurring() {
         currency: s.currency || 'USD', rate: s.rate || 0, rateTo: s.rateTo || '', channelId: s.channelId,
         person: s.person || '', hours: s.hours || 0, payType: s.payType || '', hourlyRate: s.hourlyRate || 0,
         payment: s.payment || 'cash', barterItem: s.barterItem || '', valuedBy: s.valuedBy || '',
-        status: 'expected', seriesId: s.id, episodeId: ''
+        status: s.swapSeriesId ? 'paid' : 'expected', seriesId: s.id, episodeId: '',
+        swapId: s.swapSeriesId ? s.swapSeriesId + '-' + month : ''
       });
       added++;
     }
@@ -901,7 +902,8 @@ function renderStatus() {
   hint.hidden = !box.checked;
   hint.textContent = editingId
     ? 'Changes also apply to future monthly copies. Untick to stop after this month.'
-    : 'Each new month a copy is added as Expected. Confirm it with Mark paid.';
+    : (swapMode ? 'Each new month this swap is added again. Untick it when the deal ends.'
+      : 'Each new month a copy is added as Expected. Confirm it with Mark paid.');
 }
 
 function renderSpreadHint() {
@@ -1038,6 +1040,8 @@ function openSwapForEdit(entry) {
   document.getElementById('swap-got').value = got ? got.barterItem || '' : '';
   swapGotKind = got && SWAP_GOT.includes(got.category) ? got.category : 'Other';
   document.getElementById('swap-with').value = entry.brand || '';
+  repeatsWhenOpened = repeatsAfter(entry);
+  document.getElementById('entry-repeats').checked = repeatsWhenOpened;
   document.getElementById('swap-got-value').value = gave ? gave.amount : '';
   document.getElementById('swap-gave-value').value = got ? got.amount : '';
 
@@ -1083,6 +1087,26 @@ function saveSwap(base) {
     barterItem: document.getElementById('swap-got').value.trim()
   });
 
+  const repeats = entrySpan === 1 && document.getElementById('entry-repeats').checked;
+
+  // The details each monthly copy repeats
+  const templateOf = e => ({
+    type: e.type, amount: e.amount, category: e.category, subtype: e.subtype, brand: e.brand, note: e.note,
+    currency: e.currency, rate: e.rate, rateTo: e.rateTo, channelId: e.channelId,
+    person: '', hours: 0, payType: '', hourlyRate: 0,
+    payment: 'barter', barterItem: e.barterItem, valuedBy: e.valuedBy
+  });
+  // Start repeating: one series per side, linked so their copies pair up each month
+  const startSwapSeries = sides => {
+    const swapSeriesId = newId();
+    for (const side of sides) {
+      const s = Object.assign({ id: newId(), start: side.month, end: '', skipped: [], swapSeriesId }, templateOf(side));
+      data.series.push(s);
+      side.seriesId = s.id;
+      side.swapId = swapSeriesId + '-' + side.month;
+    }
+  };
+
   const editing = editingId ? data.entries.find(e => e.id === editingId) : null;
   if (editing) {
     // An old one-sided barter entry becomes a full swap when it's saved here
@@ -1091,15 +1115,41 @@ function saveSwap(base) {
     if (!sides.includes(editing)) sides.push(editing);
     const oldIncome = sides.find(e => e.type === 'income');
     const oldCost = sides.find(e => e.type === 'cost');
+    const oldMonth = editing.month;
+    let newIncome = oldIncome, newCost = oldCost;
     if (oldIncome) Object.assign(oldIncome, income, { swapId });
-    else data.entries.push(Object.assign({ id: newId(), episodeId: '', swapId }, income));
+    else { newIncome = Object.assign({ id: newId(), episodeId: '', swapId }, income); data.entries.push(newIncome); }
     if (oldCost) Object.assign(oldCost, cost, { swapId });
-    else data.entries.push(Object.assign({ id: newId(), episodeId: '', swapId }, cost));
+    else { newCost = Object.assign({ id: newId(), episodeId: '', swapId }, cost); data.entries.push(newCost); }
+
+    const pair = [newIncome, newCost];
+    const series = pair.map(findSeries).filter(Boolean);
+    if (series.length) {
+      for (const s of series) {
+        const side = pair.find(x => x.seriesId === s.id);
+        if (oldMonth !== side.month && !s.skipped.includes(oldMonth)) s.skipped.push(oldMonth);
+        if (repeats) {
+          Object.assign(s, templateOf(side));        // later months use the new details
+          if (!repeatsWhenOpened) s.end = '';
+        } else if (repeatsWhenOpened) {
+          // Unticked: the deal ends this month; drop copies after it
+          s.end = side.month;
+          data.entries = data.entries.filter(e => !(e.seriesId === s.id && e.month > s.end));
+        }
+      }
+    } else if (repeats) {
+      startSwapSeries(pair);
+    }
   } else {
     const swapId = newId();
-    data.entries.push(Object.assign({ id: newId(), episodeId: '', swapId }, income));
-    data.entries.push(Object.assign({ id: newId(), episodeId: '', swapId }, cost));
+    const sides = [
+      Object.assign({ id: newId(), episodeId: '', swapId }, income),
+      Object.assign({ id: newId(), episodeId: '', swapId }, cost)
+    ];
+    if (repeats) startSwapSeries(sides);
+    sides.forEach(side => data.entries.push(side));
   }
+  generateRecurring();
   saveData();
 }
 
@@ -1344,6 +1394,8 @@ document.getElementById('entry-form').addEventListener('submit', function (event
     if (wasEditingSwap) { drawer.close(); return; }
     clearSwapFields();
     document.getElementById('entry-note').value = '';
+    document.getElementById('entry-repeats').checked = false;
+    renderStatus();
     document.getElementById('swap-gave').focus();
     document.getElementById('save-entry').textContent = 'Saved ✓';
     setTimeout(renderTypeToggle, 1200);
@@ -1716,7 +1768,12 @@ document.getElementById('entries-list').addEventListener('click', function (even
     const gave = entry.type === 'income' ? entry : partner;
     const got = entry.type === 'cost' ? entry : partner;
     const what = `${gave ? gave.barterItem || 'something' : 'something'} for ${got ? got.barterItem || 'something' : 'something'}`;
-    if (confirm(`Delete this barter (${what}, ${formatEntryPeriod(entry)})? Both sides are removed. This cannot be undone.`)) {
+    const repeating = findSeries(entry) ? '\n\nOnly this month is deleted. To end the deal, edit it and untick "Repeats every month".' : '';
+    if (confirm(`Delete this barter (${what}, ${formatEntryPeriod(entry)})? Both sides are removed. This cannot be undone.${repeating}`)) {
+      [entry, partner].filter(Boolean).forEach(side => {
+        const s = findSeries(side);
+        if (s && !s.skipped.includes(side.month)) s.skipped.push(side.month);
+      });
       data.entries = data.entries.filter(e => e.swapId !== entry.swapId);
       saveData();
       renderAll();
