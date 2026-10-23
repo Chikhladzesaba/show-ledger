@@ -812,6 +812,7 @@ function renderTypeToggle() {
   document.getElementById('other-name').placeholder = isIncome ? 'e.g. Grant, Prize, Licensing' : 'e.g. Insurance, Accounting, Bank fees';
   renderStatus();
   renderPayment();
+  renderSwap();
 }
 
 // Draw the stream chips, the explanation line and "Name it" for Other
@@ -929,8 +930,149 @@ function setType(type) {
   renderTypeToggle();
 }
 
-document.getElementById('type-income').addEventListener('click', () => setType('income'));
-document.getElementById('type-cost').addEventListener('click', () => setType('cost'));
+document.getElementById('type-income').addEventListener('click', () => { swapMode = false; setType('income'); });
+document.getElementById('type-cost').addEventListener('click', () => { swapMode = false; setType('cost'); });
+document.getElementById('type-barter').addEventListener('click', () => {
+  swapMode = true;
+  entryPayment = 'cash';
+  renderTypeToggle();
+});
+
+// ===== Barter: one swap, two linked entries =====
+// What you gave counts as barter income; what you got counts as a barter cost.
+// Both share a swapId, so they're edited and deleted together.
+
+let swapMode = false;
+let swapGaveKind = 'My content';
+let swapGotKind = 'Promotion';
+
+const SWAP_GAVE = [
+  { label: 'My content', category: 'Sponsorships', subtype: '' },
+  { label: 'A service', category: 'Products', subtype: 'Services' },
+  { label: 'A product', category: 'Products', subtype: '' },
+  { label: 'Other', category: 'Other', subtype: '' }
+];
+const SWAP_GOT = ['People', 'Production', 'Equipment', 'Software & tools', 'Promotion', 'Other'];
+
+function gaveKindOf(entry) {
+  const match = SWAP_GAVE.find(k => k.category === entry.category && k.subtype === (entry.subtype || ''));
+  return match ? match.label : 'Other';
+}
+
+function swapPartner(entry) {
+  return data.entries.find(e => e.swapId && e.swapId === entry.swapId && e.id !== entry.id);
+}
+
+function renderSwap() {
+  const form = document.getElementById('entry-form');
+  form.classList.toggle('swap-mode', swapMode);
+  document.getElementById('type-barter').setAttribute('aria-pressed', String(swapMode));
+  if (!swapMode) return;
+  document.getElementById('type-income').setAttribute('aria-pressed', 'false');
+  document.getElementById('type-cost').setAttribute('aria-pressed', 'false');
+  document.getElementById('swap-gave-chips').innerHTML = SWAP_GAVE
+    .map(k => `<button type="button" class="chip" data-gave="${k.label}" aria-pressed="${k.label === swapGaveKind}">${k.label}</button>`)
+    .join('');
+  document.getElementById('swap-got-chips').innerHTML = SWAP_GOT
+    .map(name => `<button type="button" class="chip" data-got="${name}" aria-pressed="${name === swapGotKind}">${name}</button>`)
+    .join('');
+  document.getElementById('amount-label').textContent = 'Value in cash';
+  document.getElementById('entry-note').placeholder = 'e.g. Studio day for their launch video';
+  document.getElementById('save-entry').textContent = editingId ? 'Save changes' : 'Save barter';
+}
+
+document.getElementById('swap-gave-chips').addEventListener('click', function (event) {
+  if (!event.target.dataset.gave) return;
+  swapGaveKind = event.target.dataset.gave;
+  renderSwap();
+});
+document.getElementById('swap-got-chips').addEventListener('click', function (event) {
+  if (!event.target.dataset.got) return;
+  swapGotKind = event.target.dataset.got;
+  renderSwap();
+});
+
+function clearSwapFields() {
+  ['swap-gave', 'swap-got', 'swap-with'].forEach(id => { document.getElementById(id).value = ''; });
+}
+
+// Open a swap for editing: both sides in one form
+function openSwapForEdit(entry) {
+  if (!editingId) {
+    beforeEdit = { entryType, selectedCategory, selectedSub, entrySpan, entryStatus, entryCurrency, entryPayType, entryPayment, entryValued, swapMode };
+  }
+  const partner = swapPartner(entry);
+  const gave = entry.type === 'income' ? entry : partner;
+  const got = entry.type === 'cost' ? entry : partner;
+  editingId = entry.id;
+  editGroupIds = [];
+  editScope = 'one';
+  swapMode = true;
+  entryPayment = 'cash';
+
+  document.getElementById('swap-gave').value = gave ? gave.barterItem || '' : '';
+  swapGaveKind = gave ? gaveKindOf(gave) : 'Other';
+  document.getElementById('swap-got').value = got ? got.barterItem || '' : '';
+  swapGotKind = got && SWAP_GOT.includes(got.category) ? got.category : 'Other';
+  document.getElementById('swap-with').value = entry.brand || '';
+
+  const [year, month] = entry.month.split('-').map(Number);
+  entrySpan = entry.span || 1;
+  ensureYearOption(year);
+  document.getElementById('entry-year').value = String(year);
+  document.getElementById('entry-month').value = String(month);
+  document.getElementById('entry-quarter').value = String(Math.ceil(month / 3));
+  document.getElementById('entry-amount').value = entry.amount;
+  document.getElementById('entry-note').value = entry.note || '';
+
+  entryCurrency = entry.currency || 'USD';
+  document.getElementById('entry-rate').value = rateForForm(entryCurrency, entry);
+  fillChannelSelect(entry.channelId);
+  renderCurrency();
+  renderSpan();
+  renderTypeToggle();
+  renderScope();
+  showDrawer();
+}
+
+// Save a swap: two entries, added or updated together
+function saveSwap(base) {
+  const typedWith = document.getElementById('swap-with').value.trim();
+  const gave = SWAP_GAVE.find(k => k.label === swapGaveKind) || SWAP_GAVE[3];
+  const common = Object.assign({}, base, {
+    brand: typedWith ? matchBrand(typedWith) : '',
+    note: document.getElementById('entry-note').value.trim(),
+    status: 'paid', payment: 'barter', valuedBy: 'market',
+    person: '', hours: 0, payType: '', hourlyRate: 0
+  });
+  const income = Object.assign({}, common, {
+    type: 'income', category: gave.category, subtype: gave.subtype,
+    barterItem: document.getElementById('swap-gave').value.trim()
+  });
+  const cost = Object.assign({}, common, {
+    type: 'cost', category: swapGotKind, subtype: '',
+    barterItem: document.getElementById('swap-got').value.trim()
+  });
+
+  const editing = editingId ? data.entries.find(e => e.id === editingId) : null;
+  if (editing) {
+    // An old one-sided barter entry becomes a full swap when it's saved here
+    const swapId = editing.swapId || newId();
+    const sides = data.entries.filter(e => e.swapId && e.swapId === editing.swapId);
+    if (!sides.includes(editing)) sides.push(editing);
+    const oldIncome = sides.find(e => e.type === 'income');
+    const oldCost = sides.find(e => e.type === 'cost');
+    if (oldIncome) Object.assign(oldIncome, income, { swapId });
+    else data.entries.push(Object.assign({ id: newId(), episodeId: '', swapId }, income));
+    if (oldCost) Object.assign(oldCost, cost, { swapId });
+    else data.entries.push(Object.assign({ id: newId(), episodeId: '', swapId }, cost));
+  } else {
+    const swapId = newId();
+    data.entries.push(Object.assign({ id: newId(), episodeId: '', swapId }, income));
+    data.entries.push(Object.assign({ id: newId(), episodeId: '', swapId }, cost));
+  }
+  saveData();
+}
 
 document.getElementById('category-chips').addEventListener('click', function (event) {
   if (!event.target.classList.contains('chip')) return;
@@ -988,6 +1130,7 @@ function clearEntryFields() {
     .forEach(id => { document.getElementById(id).value = ''; });
   document.getElementById('people-fields').open = false;
   document.getElementById('entry-repeats').checked = false;
+  clearSwapFields();
   renderSpreadHint();
 }
 
@@ -1018,12 +1161,17 @@ function ensureYearOption(year) {
 
 // Open the drawer filled in with an existing entry
 function openForEdit(entry, groupIds, scope) {
+  if (entry.swapId) {
+    openSwapForEdit(entry);
+    return;
+  }
+  swapMode = false;
   editGroupIds = groupIds && groupIds.length > 1 ? groupIds : [];
   editScope = editGroupIds.length ? (scope || 'one') : 'one';
 
   // Remember the choices from before, to restore them when editing ends
   if (!editingId) {
-    beforeEdit = { entryType, selectedCategory, selectedSub, entrySpan, entryStatus, entryCurrency, entryPayType, entryPayment, entryValued };
+    beforeEdit = { entryType, selectedCategory, selectedSub, entrySpan, entryStatus, entryCurrency, entryPayType, entryPayment, entryValued, swapMode };
   }
   editingId = entry.id;
   entryType = entry.type;
@@ -1111,6 +1259,7 @@ drawer.addEventListener('close', function () {
       entryPayType = beforeEdit.entryPayType;
       entryPayment = beforeEdit.entryPayment;
       entryValued = beforeEdit.entryValued;
+      swapMode = beforeEdit.swapMode;
       beforeEdit = null;
     }
     renderChips();
@@ -1149,6 +1298,26 @@ document.getElementById('entry-form').addEventListener('submit', function (event
   let firstMonth = 1;
   if (entrySpan === 1) firstMonth = Number(document.getElementById('entry-month').value);
   if (entrySpan === 3) firstMonth = (Number(document.getElementById('entry-quarter').value) - 1) * 3 + 1;
+
+  if (swapMode) {
+    const wasEditingSwap = Boolean(editingId);
+    saveSwap({
+      amount: amount, month: monthKey(year, firstMonth), span: entrySpan,
+      currency: entryCurrency, rate: rate, rateTo: foreign ? mainCurrency() : '', channelId: channelId
+    });
+    anchor = { year: year, month: firstMonth };
+    if (entrySpan > PERIOD_SIZE[periodType]) periodType = entrySpan === 12 ? 'year' : 'quarter';
+    renderAll();
+    renderBrandList();
+    if (wasEditingSwap) { drawer.close(); return; }
+    clearSwapFields();
+    document.getElementById('entry-amount').value = '';
+    document.getElementById('entry-note').value = '';
+    document.getElementById('swap-gave').focus();
+    document.getElementById('save-entry').textContent = 'Saved ✓';
+    setTimeout(renderTypeToggle, 1200);
+    return;
+  }
 
   const definition = currentDefinition();
   const otherName = document.getElementById('other-name').value.trim();
@@ -1506,6 +1675,18 @@ document.getElementById('entries-list').addEventListener('click', function (even
   }
 
   // Delete button
+  if (event.target.classList.contains('delete') && entry.swapId) {
+    const partner = swapPartner(entry);
+    const gave = entry.type === 'income' ? entry : partner;
+    const got = entry.type === 'cost' ? entry : partner;
+    const what = `${gave ? gave.barterItem || 'something' : 'something'} for ${got ? got.barterItem || 'something' : 'something'}`;
+    if (confirm(`Delete this barter (${what}, ${formatEntryPeriod(entry)})? Both sides are removed. This cannot be undone.`)) {
+      data.entries = data.entries.filter(e => e.swapId !== entry.swapId);
+      saveData();
+      renderAll();
+    }
+    return;
+  }
   if (event.target.classList.contains('delete')) {
     const label = entry.type === 'income' ? 'income' : 'cost';
     const series = findSeries(entry);
@@ -2226,10 +2407,20 @@ document.getElementById('tax-barter').addEventListener('change', function (event
 
 // ===== Barter card: what was received or given instead of money =====
 
+// A swap shows once (its "gave" side), with what came back next to it
 function barterRows(months) {
   return visibleEntries()
-    .filter(e => isBarter(e) && amountIn(e, months) > 0)
+    .filter(e => isBarter(e) && amountIn(e, months) > 0 && !(e.swapId && e.type === 'cost'))
     .sort((a, b) => b.month.localeCompare(a.month));
+}
+
+// "Studio rental → Promotion" for a swap; the item and its side for older entries
+function barterWhat(e) {
+  if (e.swapId) {
+    const got = swapPartner(e);
+    return `${escapeHtml(e.barterItem || gaveKindOf(e))} → ${escapeHtml(got ? got.barterItem || got.category : '?')}<span class="small">Swap · gave ${escapeHtml(gaveKindOf(e).toLowerCase())} · got ${escapeHtml(got ? got.category.toLowerCase() : '?')}</span>`;
+  }
+  return `${escapeHtml(e.barterItem || formatCategory(e))}<span class="small">${e.type === 'income' ? 'Received' : 'Given'} · ${escapeHtml(formatCategory(e))}${e.status === 'expected' ? ' · not received yet' : ''}</span>`;
 }
 
 function renderBarter() {
@@ -2243,11 +2434,11 @@ function renderBarter() {
   const line = (e, groupKey) => `
         <tr class="${groupKey ? 'child-row' : ''}"${groupKey ? ` data-parent="${groupKey}"` : ''}${groupKey && !expandedGroups.has(groupKey) ? ' hidden' : ''}>
           <td>${formatEntryPeriod(e)}</td>
-          <td>${escapeHtml(e.barterItem || formatCategory(e))}<span class="small">${e.type === 'income' ? 'Received' : 'Given'} · ${escapeHtml(formatCategory(e))}${e.status === 'expected' ? ' · not received yet' : ''}</span></td>
+          <td>${barterWhat(e)}</td>
           <td>${escapeHtml(e.brand || e.person || '')}</td>
           <td>${e.valuedBy === 'rate' ? 'Our usual rate' : 'Market price'}</td>
-          <td class="number">${e.type === 'income' ? '+' : '−'}${formatMain(amountIn(e, months))}</td>
-          <td></td>
+          <td class="number">${e.swapId ? '' : (e.type === 'income' ? '+' : '−')}${formatMain(amountIn(e, months))}</td>
+          <td class="number row-actions"><button type="button" class="edit-barter" data-id="${e.id}">Edit</button></td>
         </tr>`;
 
   // Same brand and item = one group, opened with "Show"
@@ -2283,6 +2474,11 @@ function renderBarter() {
 }
 
 document.getElementById('barter-list').addEventListener('click', function (event) {
+  if (event.target.classList.contains('edit-barter')) {
+    const entry = data.entries.find(e => e.id === event.target.dataset.id);
+    if (entry) openForEdit(entry, [], 'one');
+    return;
+  }
   const row = event.target.closest('tr.group-row');
   if (row) toggleGroup(row);
 });
@@ -2292,7 +2488,7 @@ function barterSummary(months) {
   if (rows.length === 0) return '';
   return `
     <h2>Barter</h2>
-    <table class="group-table"><tbody>${rows.map(e => `<tr><td>${escapeHtml(e.barterItem || formatCategory(e))}<span class="small">${e.type === 'income' ? 'Received' : 'Given'}${e.brand ? ' · ' + escapeHtml(e.brand) : ''} · ${e.valuedBy === 'rate' ? 'our usual rate' : 'market price'}</span></td><td class="number">${formatEntryPeriod(e)}</td><td class="number">${formatMain(amountIn(e, months))}</td></tr>`).join('')}</tbody></table>`;
+    <table class="group-table"><tbody>${rows.map(e => `<tr><td>${e.swapId ? `${escapeHtml(e.barterItem || gaveKindOf(e))} → ${escapeHtml((swapPartner(e) || {}).barterItem || (swapPartner(e) || {}).category || '?')}` : escapeHtml(e.barterItem || formatCategory(e))}<span class="small">${e.swapId ? 'Swap' : (e.type === 'income' ? 'Received' : 'Given')}${e.brand ? ' · ' + escapeHtml(e.brand) : ''} · ${e.valuedBy === 'rate' ? 'our usual rate' : 'market price'}</span></td><td class="number">${formatEntryPeriod(e)}</td><td class="number">${formatMain(amountIn(e, months))}</td></tr>`).join('')}</tbody></table>`;
 }
 
 // ===== Editing a whole group =====
