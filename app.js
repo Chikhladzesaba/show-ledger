@@ -952,7 +952,7 @@ const SWAP_GAVE = [
   { label: 'A product', category: 'Products', subtype: '' },
   { label: 'Other', category: 'Other', subtype: '' }
 ];
-const SWAP_GOT = ['People', 'Production', 'Equipment', 'Software & tools', 'Promotion', 'Other'];
+const SWAP_GOT = ['Promotion', 'Production', 'Equipment', 'Software & tools', 'Other'];
 
 function gaveKindOf(entry) {
   const match = SWAP_GAVE.find(k => k.category === entry.category && k.subtype === (entry.subtype || ''));
@@ -966,6 +966,7 @@ function swapPartner(entry) {
 function renderSwap() {
   const form = document.getElementById('entry-form');
   form.classList.toggle('swap-mode', swapMode);
+  document.getElementById('entry-amount').required = !swapMode;
   document.getElementById('type-barter').setAttribute('aria-pressed', String(swapMode));
   if (!swapMode) return;
   document.getElementById('type-income').setAttribute('aria-pressed', 'false');
@@ -976,7 +977,7 @@ function renderSwap() {
   document.getElementById('swap-got-chips').innerHTML = SWAP_GOT
     .map(name => `<button type="button" class="chip" data-got="${name}" aria-pressed="${name === swapGotKind}">${name}</button>`)
     .join('');
-  document.getElementById('amount-label').textContent = 'Value in cash';
+  renderSwapResult();
   document.getElementById('entry-note').placeholder = 'e.g. Studio day for their launch video';
   document.getElementById('save-entry').textContent = editingId ? 'Save changes' : 'Save barter';
 }
@@ -993,7 +994,29 @@ document.getElementById('swap-got-chips').addEventListener('click', function (ev
 });
 
 function clearSwapFields() {
-  ['swap-gave', 'swap-got', 'swap-with'].forEach(id => { document.getElementById(id).value = ''; });
+  ['swap-gave', 'swap-got', 'swap-with', 'swap-gave-value', 'swap-got-value'].forEach(id => { document.getElementById(id).value = ''; });
+  renderSwapResult();
+}
+
+// "You came out ₾300 ahead": what you got minus what you gave
+function renderSwapResult() {
+  const got = Number(document.getElementById('swap-got-value').value);
+  const typedGave = Number(document.getElementById('swap-gave-value').value);
+  const gave = typedGave > 0 ? typedGave : got;
+  const line = document.getElementById('swap-result');
+  if (!(got > 0)) { line.textContent = ''; return; }
+  const diff = got - gave;
+  line.textContent = Math.abs(diff) < 0.005 ? 'An even swap.'
+    : diff > 0 ? `You came out ${formatIn(diff, entryCurrency)} ahead.`
+    : `You gave ${formatIn(-diff, entryCurrency)} more than you got.`;
+}
+document.getElementById('swap-gave-value').addEventListener('input', renderSwapResult);
+document.getElementById('swap-got-value').addEventListener('input', renderSwapResult);
+
+// A swap's result in a period: what you got (income side) minus what you gave (cost side)
+function swapResultIn(entry, months) {
+  const partner = swapPartner(entry);
+  return amountIn(entry, months) - (partner ? amountIn(partner, months) : 0);
 }
 
 // Open a swap for editing: both sides in one form
@@ -1015,6 +1038,8 @@ function openSwapForEdit(entry) {
   document.getElementById('swap-got').value = got ? got.barterItem || '' : '';
   swapGotKind = got && SWAP_GOT.includes(got.category) ? got.category : 'Other';
   document.getElementById('swap-with').value = entry.brand || '';
+  document.getElementById('swap-got-value').value = gave ? gave.amount : '';
+  document.getElementById('swap-gave-value').value = got ? got.amount : '';
 
   const [year, month] = entry.month.split('-').map(Number);
   entrySpan = entry.span || 1;
@@ -1045,12 +1070,16 @@ function saveSwap(base) {
     status: 'paid', payment: 'barter', valuedBy: 'market',
     person: '', hours: 0, payType: '', hourlyRate: 0
   });
+  // Money in: what you got, at market price, earned with what you gave.
+  // Money out: what you gave, at your usual rate, spent on what you got.
+  const gaveValue = Number(document.getElementById('swap-gave-value').value);
   const income = Object.assign({}, common, {
-    type: 'income', category: gave.category, subtype: gave.subtype,
+    type: 'income', category: gave.category, subtype: gave.subtype, valuedBy: 'market',
     barterItem: document.getElementById('swap-gave').value.trim()
   });
   const cost = Object.assign({}, common, {
-    type: 'cost', category: swapGotKind, subtype: '',
+    type: 'cost', category: swapGotKind, subtype: '', valuedBy: 'rate',
+    amount: gaveValue > 0 ? gaveValue : base.amount,
     barterItem: document.getElementById('swap-got').value.trim()
   });
 
@@ -1275,8 +1304,11 @@ drawer.addEventListener('click', function (event) {
 document.getElementById('entry-form').addEventListener('submit', function (event) {
   event.preventDefault();
 
-  const amount = Number(document.getElementById('entry-amount').value);
-  if (!(amount > 0)) return;
+  const amount = Number(document.getElementById(swapMode ? 'swap-got-value' : 'entry-amount').value);
+  if (!(amount > 0)) {
+    if (swapMode) document.getElementById('swap-got-value').focus();
+    return;
+  }
 
   // A rate is needed when the entry isn't in the main currency
   const typedRate = Number(document.getElementById('entry-rate').value);
@@ -1311,7 +1343,6 @@ document.getElementById('entry-form').addEventListener('submit', function (event
     renderBrandList();
     if (wasEditingSwap) { drawer.close(); return; }
     clearSwapFields();
-    document.getElementById('entry-amount').value = '';
     document.getElementById('entry-note').value = '';
     document.getElementById('swap-gave').focus();
     document.getElementById('save-entry').textContent = 'Saved ✓';
@@ -1509,9 +1540,14 @@ function entryRow(entry, months, groupKey) {
   const sign = isIncome ? '+' : '−';
   const showChannel = data.settings.activeChannel === 'all' && data.channels.length > 1;
   const channelTag = showChannel ? `<span class="channel-tag">${escapeHtml(channelName(entry.channelId))}</span>` : '';
-  const barterText = isBarter(entry) && entry.barterItem
-    ? `${escapeHtml(entry.barterItem)} (${entry.valuedBy === 'rate' ? 'our usual rate' : 'market price'})`
-    : '';
+  const partner = entry.swapId ? swapPartner(entry) : null;
+  const barterText = partner
+    ? (isIncome
+      ? `${escapeHtml(entry.barterItem || 'Swap')}, paid in ${escapeHtml(partner.barterItem || partner.category)} (market price)`
+      : `${escapeHtml(entry.barterItem || 'Swap')}, paid with ${escapeHtml(partner.barterItem || gaveKindOf(partner).toLowerCase())} (your usual rate)`)
+    : isBarter(entry) && entry.barterItem
+      ? `${escapeHtml(entry.barterItem)} (${entry.valuedBy === 'rate' ? 'our usual rate' : 'market price'})`
+      : '';
   const details = channelTag + [entry.brand ? `<strong>${escapeHtml(entry.brand)}</strong>` : '', barterText, peopleText(entry), escapeHtml(entry.note)]
     .filter(Boolean)
     .join(' · ');
@@ -2414,6 +2450,14 @@ function barterRows(months) {
     .sort((a, b) => b.month.localeCompare(a.month));
 }
 
+// "+₾300" with "got ₾1,800 · gave ₾1,500" under it
+function swapValueCell(e, months) {
+  const partner = swapPartner(e);
+  const result = swapResultIn(e, months);
+  const sign = result > 0.005 ? '+' : result < -0.005 ? '−' : '';
+  return `${sign}${formatMain(Math.abs(result))}<span class="small">got ${formatMain(amountIn(e, months))} · gave ${formatMain(partner ? amountIn(partner, months) : 0)}</span>`;
+}
+
 // "Studio rental → Promotion" for a swap; the item and its side for older entries
 function barterWhat(e) {
   if (e.swapId) {
@@ -2436,8 +2480,8 @@ function renderBarter() {
           <td>${formatEntryPeriod(e)}</td>
           <td>${barterWhat(e)}</td>
           <td>${escapeHtml(e.brand || e.person || '')}</td>
-          <td>${e.valuedBy === 'rate' ? 'Our usual rate' : 'Market price'}</td>
-          <td class="number">${e.swapId ? '' : (e.type === 'income' ? '+' : '−')}${formatMain(amountIn(e, months))}</td>
+          <td>${e.swapId ? 'Market price / your rate' : (e.valuedBy === 'rate' ? 'Our usual rate' : 'Market price')}</td>
+          <td class="number">${e.swapId ? swapValueCell(e, months) : (e.type === 'income' ? '+' : '−') + formatMain(amountIn(e, months))}</td>
           <td class="number row-actions"><button type="button" class="edit-barter" data-id="${e.id}">Edit</button></td>
         </tr>`;
 
@@ -2453,14 +2497,14 @@ function renderBarter() {
     if (list.length === 1) { body += line(list[0], null); continue; }
     const e = list[0];
     const open = expandedGroups.has(key);
-    const total = list.reduce((t, x) => t + amountIn(x, months), 0);
+    const total = list.reduce((t, x) => t + (x.swapId ? swapResultIn(x, months) : amountIn(x, months)), 0);
     body += `
         <tr class="group-row" data-group="${key}">
           <td>${monthRange(list)}</td>
           <td>${escapeHtml(e.barterItem || formatCategory(e))}<span class="small">${e.type === 'income' ? 'Received' : 'Given'} · ${list.length} times</span></td>
           <td>${escapeHtml(e.brand || e.person || '')}</td>
           <td>${e.valuedBy === 'rate' ? 'Our usual rate' : 'Market price'}</td>
-          <td class="number"><strong>${e.type === 'income' ? '+' : '−'}${formatMain(total)}</strong></td>
+          <td class="number"><strong>${e.swapId ? (total < 0 ? '−' : '+') : (e.type === 'income' ? '+' : '−')}${formatMain(Math.abs(total))}</strong></td>
           <td class="number"><button type="button" class="group-toggle" aria-expanded="${open}">${open ? '▾ Hide' : `▸ Show ${list.length}`}</button></td>
         </tr>`;
     body += list.map(x => line(x, key)).join('');
@@ -2488,7 +2532,7 @@ function barterSummary(months) {
   if (rows.length === 0) return '';
   return `
     <h2>Barter</h2>
-    <table class="group-table"><tbody>${rows.map(e => `<tr><td>${e.swapId ? `${escapeHtml(e.barterItem || gaveKindOf(e))} → ${escapeHtml((swapPartner(e) || {}).barterItem || (swapPartner(e) || {}).category || '?')}` : escapeHtml(e.barterItem || formatCategory(e))}<span class="small">${e.swapId ? 'Swap' : (e.type === 'income' ? 'Received' : 'Given')}${e.brand ? ' · ' + escapeHtml(e.brand) : ''} · ${e.valuedBy === 'rate' ? 'our usual rate' : 'market price'}</span></td><td class="number">${formatEntryPeriod(e)}</td><td class="number">${formatMain(amountIn(e, months))}</td></tr>`).join('')}</tbody></table>`;
+    <table class="group-table"><tbody>${rows.map(e => `<tr><td>${e.swapId ? `${escapeHtml(e.barterItem || gaveKindOf(e))} → ${escapeHtml((swapPartner(e) || {}).barterItem || (swapPartner(e) || {}).category || '?')}` : escapeHtml(e.barterItem || formatCategory(e))}<span class="small">${e.swapId ? 'Swap' : (e.type === 'income' ? 'Received' : 'Given')}${e.brand ? ' · ' + escapeHtml(e.brand) : ''} · ${e.valuedBy === 'rate' ? 'our usual rate' : 'market price'}</span></td><td class="number">${formatEntryPeriod(e)}</td><td class="number">${e.swapId ? (swapResultIn(e, months) < 0 ? '−' : '+') + formatMain(Math.abs(swapResultIn(e, months))) : formatMain(amountIn(e, months))}</td></tr>`).join('')}</tbody></table>`;
 }
 
 // ===== Editing a whole group =====
