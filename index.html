@@ -606,7 +606,11 @@
     .segmented button[aria-pressed="true"] { background: var(--ink); color: #ffffff; }
 
     /* Barter mode: show the swap box, hide the parts that don't apply */
-    #entry-form:not(.swap-mode) #swap-fields { display: none; }
+    #entry-form:not(.swap-mode) #swap-fields, #entry-form:not(.swap-mode) #swap-value-hint { display: none; }
+    #swap-value-hint { margin-top: -6px; }
+    .swap-mode #amount-field { display: none !important; }
+    .swap-result { margin: 0; font-weight: 500; }
+    .swap-result:empty { display: none; }
     .swap-mode #status-field, .swap-mode #repeat-row, .swap-mode #repeat-hint,
     .swap-mode #category-field, .swap-mode #sub-fieldset, .swap-mode #brand-field,
     .swap-mode #people-fields, .swap-mode #barter-fields { display: none !important; }
@@ -820,6 +824,11 @@
             <div class="chips" id="swap-gave-chips"></div>
           </fieldset>
           <label class="field">
+            Your usual price for it
+            <input type="number" id="swap-gave-value" min="0" step="0.01" placeholder="0.00">
+            <span class="hint">What you'd normally charge in cash. Leave empty if it's an even swap.</span>
+          </label>
+          <label class="field">
             You got
             <input type="text" id="swap-got" placeholder="e.g. Promotion in their video">
           </label>
@@ -828,9 +837,15 @@
             <div class="chips" id="swap-got-chips"></div>
           </fieldset>
           <label class="field">
+            Market price of it
+            <input type="number" id="swap-got-value" min="0" step="0.01" placeholder="0.00">
+            <span class="hint">What it would cost to buy it yourself.</span>
+          </label>
+          <label class="field">
             With whom?
             <input type="text" id="swap-with" list="brand-list" autocomplete="off" placeholder="e.g. a brand, shop or person">
           </label>
+          <p class="swap-result" id="swap-result"></p>
         </div>
 
         <fieldset id="payment-field" hidden>
@@ -861,7 +876,7 @@
         </div>
 
         <div class="amount-row">
-          <label class="field">
+          <label class="field" id="amount-field">
             <span id="amount-label">Amount</span>
             <input type="number" id="entry-amount" class="amount-input" min="0" step="0.01" placeholder="0.00" required>
           </label>
@@ -871,6 +886,7 @@
             <button type="button" data-currency="EUR" aria-pressed="false">EUR</button>
           </div>
         </div>
+        <p class="hint" id="swap-value-hint">Both prices are in this currency.</p>
         <div class="field" id="rate-field" hidden>
           <label class="rate-line" for="entry-rate">
             <span id="rate-from">1 USD =</span>
