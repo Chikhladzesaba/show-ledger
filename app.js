@@ -1584,7 +1584,29 @@ function monthRange(entries) {
 }
 
 // One table row for one entry
+// One row for a whole swap: "Placement in video → Coffee", result "−₾200"
+function swapEntryRow(entry, months, groupKey) {
+  const partner = swapPartner(entry);
+  const showChannel = data.settings.activeChannel === 'all' && data.channels.length > 1;
+  const channelTag = showChannel ? `<span class="channel-tag">${escapeHtml(channelName(entry.channelId))}</span>` : '';
+  const what = `${escapeHtml(entry.barterItem || gaveKindOf(entry))} → ${escapeHtml(partner ? partner.barterItem || partner.category : '?')}`;
+  const details = channelTag + [entry.brand ? `<strong>${escapeHtml(entry.brand)}</strong>` : '', what, escapeHtml(entry.note)]
+    .filter(Boolean).join(' · ');
+  const repeating = entry.seriesId && !groupKey ? '<span class="small">Repeats monthly</span>' : '';
+  const hidden = groupKey && !expandedGroups.has(groupKey) ? ' hidden' : '';
+  return `
+      <tr data-id="${entry.id}" class="${groupKey ? 'child-row' : ''}"${groupKey ? ` data-parent="${groupKey}"` : ''}${hidden}>
+        <td>${formatEntryPeriod(entry)}</td>
+        <td><span class="badge barter">Barter</span></td>
+        <td>Swap<span class="small">gave ${escapeHtml(gaveKindOf(entry).toLowerCase())} · got ${escapeHtml(partner ? partner.category.toLowerCase() : '?')}</span>${repeating}</td>
+        <td class="muted">${details}</td>
+        <td class="number">${swapValueCell(entry, months)}</td>
+        <td class="number row-actions"><button class="edit" data-id="${entry.id}">Edit</button><button class="delete" data-id="${entry.id}">Delete</button></td>
+      </tr>`;
+}
+
 function entryRow(entry, months, groupKey) {
+  if (entry.swapId) return swapEntryRow(entry, months, groupKey);
   const isIncome = entry.type === 'income';
   const expected = entry.status === 'expected';
   const part = showPendingOnly ? valueInMain(entry) : amountIn(entry, months);
@@ -1633,6 +1655,24 @@ function entryRow(entry, months, groupKey) {
 // The summary row of a group: opens and closes its entries
 function groupRow(group, months) {
   const first = group.entries[0];
+  if (first.swapId) {
+    const partner = swapPartner(first);
+    const open = expandedGroups.has(group.key);
+    const count = group.entries.length;
+    const result = group.entries.reduce((t, e) => t + swapResultIn(e, months), 0);
+    const got = group.entries.reduce((t, e) => t + amountIn(e, months), 0);
+    const sign = result > 0.005 ? '+' : result < -0.005 ? '−' : '';
+    const what = `${escapeHtml(first.barterItem || gaveKindOf(first))} → ${escapeHtml(partner ? partner.barterItem || partner.category : '?')}`;
+    return `
+      <tr class="group-row" data-group="${group.key}">
+        <td>${monthRange(group.entries)}</td>
+        <td><span class="badge barter">Barter</span></td>
+        <td>Swap<span class="small">${first.seriesId ? 'Repeats monthly' : `${count} entries`}</span></td>
+        <td class="muted">${[first.brand ? `<strong>${escapeHtml(first.brand)}</strong>` : '', what].filter(Boolean).join(' · ')}</td>
+        <td class="number"><strong>${sign}${formatMain(Math.abs(result))}</strong><span class="small">got ${formatMain(got)} · gave ${formatMain(got - result)}</span></td>
+        <td class="number row-actions"><button type="button" class="edit-all">Edit</button><button type="button" class="group-toggle" aria-expanded="${open}">${open ? '▾ Hide' : `▸ Show ${count}`}</button></td>
+      </tr>`;
+  }
   const isIncome = first.type === 'income';
   const open = expandedGroups.has(group.key);
   const total = group.entries.reduce((t, e) => t + (showPendingOnly ? valueInMain(e) : amountIn(e, months)), 0);
@@ -1673,7 +1713,9 @@ function renderEntries() {
     return;
   }
 
+  // A swap is listed once, by its "gave" side, with what came back next to it
   const shown = visibleEntries()
+    .filter(e => !(e.swapId && e.type === 'cost'))
     .filter(e => showPendingOnly ? e.status === 'expected' : amountIn(e, months) > 0);
 
   if (shown.length === 0) {
