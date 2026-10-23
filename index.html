@@ -363,7 +363,12 @@
     }
 
     /* ===== People and hours ===== */
-    .people-fields { display: flex; flex-direction: column; gap: 14px; padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg); }
+    .people-fields { border: 1px solid var(--border); border-radius: 12px; background: var(--bg); }
+    .people-fields summary { list-style: none; cursor: pointer; padding: 14px 16px; color: var(--accent); font-weight: 500; }
+    .people-fields summary::-webkit-details-marker { display: none; }
+    .people-fields summary span { color: var(--muted); font-weight: 400; }
+    .people-fields[open] summary { padding-bottom: 0; }
+    .people-inner { display: flex; flex-direction: column; gap: 14px; padding: 14px 16px 16px; }
     .pay-types { display: flex; width: 100%; }
     .pay-types button { flex: 1; }
     #team-list { overflow-x: auto; }
@@ -918,7 +923,9 @@
           <span class="hint">Past brands are suggested, so totals stay together.</span>
         </label>
 
-        <div class="people-fields" id="people-fields" hidden>
+        <details class="people-fields" id="people-fields" hidden>
+          <summary>+ Add person details <span>(optional)</span></summary>
+          <div class="people-inner">
           <label class="field">
             Person (optional)
             <input type="text" id="entry-person" list="people-list" autocomplete="off" placeholder="Their name">
@@ -942,7 +949,8 @@
             </label>
           </div>
           <p class="hint" id="hours-hint"></p>
-        </div>
+          </div>
+        </details>
 
         <label class="field">
           Note (optional)
