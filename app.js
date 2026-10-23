@@ -945,11 +945,13 @@ document.getElementById('type-barter').addEventListener('click', () => {
 // Both share a swapId, so they're edited and deleted together.
 
 let swapMode = false;
-let swapGaveKind = 'My content';
+let swapGaveKind = 'Integration';
 let swapGotKind = 'Promotion';
 
 const SWAP_GAVE = [
-  { label: 'My content', category: 'Sponsorships', subtype: '' },
+  { label: 'Integration', category: 'Sponsorships', subtype: 'Integration' },
+  { label: 'Placement', category: 'Sponsorships', subtype: 'Product placement' },
+  { label: 'Dedicated video', category: 'Sponsorships', subtype: 'Dedicated video' },
   { label: 'A service', category: 'Products', subtype: 'Services' },
   { label: 'A product', category: 'Products', subtype: '' },
   { label: 'Other', category: 'Other', subtype: '' }
@@ -958,7 +960,8 @@ const SWAP_GOT = ['Promotion', 'Production', 'Equipment', 'Software & tools', 'O
 
 function gaveKindOf(entry) {
   const match = SWAP_GAVE.find(k => k.category === entry.category && k.subtype === (entry.subtype || ''));
-  return match ? match.label : 'Other';
+  if (match) return match.label;
+  return entry.category === 'Sponsorships' ? 'Integration' : 'Other';   // saved before these choices existed
 }
 
 function swapPartner(entry) {
