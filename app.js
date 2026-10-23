@@ -75,7 +75,7 @@ const COST_CATEGORIES = [
     name: 'People', subLabel: 'Who? (optional)',
     subs: ['Editor', 'Host / guest fee', 'Camera / crew', 'Designer', 'Accountant / lawyer', 'Other'],
     hint: 'Anyone you pay, for the content or for running the business.',
-    note: 'e.g. Fees for September',
+    note: 'e.g. Payment for September',
     subNotes: {
       'Editor': 'e.g. Editing 4 episodes, September',
       'Host / guest fee': 'e.g. Guest fee, episode 14',
@@ -884,10 +884,11 @@ function renderSpan() {
 // Paid / Expected switch and the "Repeats every month" row
 function renderStatus() {
   const isIncome = entryType === 'income';
-  document.getElementById('status-legend').textContent = isIncome ? 'Has it arrived?' : 'Has it been paid?';
+  document.getElementById('status-legend').textContent = isIncome ? 'Has the money arrived?' : 'Have you paid it?';
+  document.getElementById('status-paid').textContent = isIncome ? 'Yes, received' : 'Yes, paid';
   document.getElementById('status-paid').setAttribute('aria-pressed', String(entryStatus === 'paid'));
   document.getElementById('status-expected').setAttribute('aria-pressed', String(entryStatus === 'expected'));
-  document.getElementById('status-expected').textContent = isIncome ? 'Expected' : 'To pay';
+  document.getElementById('status-expected').textContent = 'Not yet';
 
   // Only single months can repeat
   const row = document.getElementById('repeat-row');
@@ -985,6 +986,7 @@ function showDrawer() {
 function clearEntryFields() {
   ['entry-amount', 'entry-note', 'other-name', 'sub-other-name', 'entry-brand', 'entry-person', 'entry-hours', 'entry-hour-rate', 'barter-item', 'barter-from']
     .forEach(id => { document.getElementById(id).value = ''; });
+  document.getElementById('people-fields').open = false;
   document.getElementById('entry-repeats').checked = false;
   renderSpreadHint();
 }
@@ -1064,6 +1066,7 @@ function openForEdit(entry, groupIds, scope) {
 
   // Person and hours (People costs)
   document.getElementById('entry-person').value = entry.person || '';
+  document.getElementById('people-fields').open = Boolean(entry.person || entry.hours || entry.payType === 'hourly');
   document.getElementById('entry-hours').value = entry.hours || '';
   document.getElementById('entry-hour-rate').value = entry.hourlyRate || '';
   entryPayType = entry.payType === 'hourly' ? 'hourly' : 'fixed';
@@ -1266,6 +1269,7 @@ document.getElementById('entry-form').addEventListener('submit', function (event
   document.getElementById('sub-other-name').value = '';
   document.getElementById('entry-brand').value = '';
   ['entry-person', 'entry-hours', 'entry-hour-rate'].forEach(id => { document.getElementById(id).value = ''; });
+  document.getElementById('people-fields').open = false;
   entryPayType = 'fixed';
   renderPeopleFields();
   document.getElementById('barter-item').value = '';
