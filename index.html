@@ -595,15 +595,21 @@
     /* Money in / Money out */
     .segmented {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 4px;
       padding: 4px;
       background: var(--bg);
       border: 1px solid var(--border);
       border-radius: 999px;
     }
-    .segmented button { background: transparent; color: var(--muted); }
+    .segmented button { background: transparent; color: var(--muted); padding: 0 8px; white-space: nowrap; }
     .segmented button[aria-pressed="true"] { background: var(--ink); color: #ffffff; }
+
+    /* Barter mode: show the swap box, hide the parts that don't apply */
+    #entry-form:not(.swap-mode) #swap-fields { display: none; }
+    .swap-mode #status-field, .swap-mode #repeat-row, .swap-mode #repeat-hint,
+    .swap-mode #category-field, .swap-mode #sub-fieldset, .swap-mode #brand-field,
+    .swap-mode #people-fields, .swap-mode #barter-fields { display: none !important; }
 
     .span-types { display: flex; width: 100%; }
     .span-types button, .status-types button { flex: 1; }
@@ -800,9 +806,34 @@
         <div class="segmented" role="group" aria-label="Entry type">
           <button type="button" id="type-income" aria-pressed="true">Money in</button>
           <button type="button" id="type-cost" aria-pressed="false">Money out</button>
+          <button type="button" id="type-barter" aria-pressed="false">Barter</button>
         </div>
 
-        <fieldset>
+        <!-- Barter: one swap, saved as barter income (what you gave) and a barter cost (what you got) -->
+        <div class="barter-fields" id="swap-fields">
+          <label class="field">
+            You gave
+            <input type="text" id="swap-gave" placeholder="e.g. Studio rental">
+          </label>
+          <fieldset>
+            <legend>What kind?</legend>
+            <div class="chips" id="swap-gave-chips"></div>
+          </fieldset>
+          <label class="field">
+            You got
+            <input type="text" id="swap-got" placeholder="e.g. Promotion in their video">
+          </label>
+          <fieldset>
+            <legend>What kind?</legend>
+            <div class="chips" id="swap-got-chips"></div>
+          </fieldset>
+          <label class="field">
+            With whom?
+            <input type="text" id="swap-with" list="brand-list" autocomplete="off" placeholder="e.g. a brand, shop or person">
+          </label>
+        </div>
+
+        <fieldset id="payment-field" hidden>
           <legend id="payment-legend">How were you paid?</legend>
           <div class="segmented-pill payment-types" role="group" aria-label="Cash or barter">
             <button type="button" data-payment="cash" aria-pressed="true">Cash</button>
@@ -854,7 +885,7 @@
           <select id="entry-channel"></select>
         </label>
 
-        <fieldset>
+        <fieldset id="status-field">
           <legend id="status-legend">Has it arrived?</legend>
           <div class="segmented-pill status-types" role="group" aria-label="Status">
             <button type="button" id="status-paid" aria-pressed="true">Paid</button>
@@ -896,7 +927,7 @@
           <p class="hint" id="repeat-hint" hidden></p>
         </fieldset>
 
-        <fieldset>
+        <fieldset id="category-field">
           <legend id="category-legend">Where did it come from?</legend>
           <div class="chips" id="category-chips"></div>
           <p class="hint" id="category-hint" hidden></p>
