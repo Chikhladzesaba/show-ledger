@@ -20,7 +20,7 @@ const INCOME_STREAMS = [
   {
     name: 'Sponsorships', brand: true, subLabel: 'What kind of deal? (optional)',
     subs: ['Integration', 'Dedicated video', 'Product placement', 'Ambassador deal', 'Event / live', 'Other'],
-    hint: 'Brands paying you to feature them in your content.',
+    hint: 'Brands paying you to feature them. Type the full fee; add any agency commission as a cost under Fees.',
     note: 'e.g. Deal for episode 14',
     subNotes: {
       'Integration': 'e.g. 60-second mention in episode 14',
@@ -73,14 +73,15 @@ const INCOME_STREAMS = [
 const COST_CATEGORIES = [
   {
     name: 'People', subLabel: 'Who? (optional)',
-    subs: ['Editor', 'Host / guest fee', 'Camera / crew', 'Designer', 'Other'],
-    hint: 'Anyone you pay to make the content.',
+    subs: ['Editor', 'Host / guest fee', 'Camera / crew', 'Designer', 'Accountant / lawyer', 'Other'],
+    hint: 'Anyone you pay, for the content or for running the business.',
     note: 'e.g. Fees for September',
     subNotes: {
       'Editor': 'e.g. Editing 4 episodes, September',
       'Host / guest fee': 'e.g. Guest fee, episode 14',
       'Camera / crew': 'e.g. Camera operator, 2 shoot days',
-      'Designer': 'e.g. Thumbnails for September'
+      'Designer': 'e.g. Thumbnails for September',
+      'Accountant / lawyer': 'e.g. Accountant, September'
     },
     subOther: 'e.g. Scriptwriter, Producer'
   },
@@ -111,13 +112,13 @@ const COST_CATEGORIES = [
   },
   {
     name: 'Software & tools', subLabel: 'What kind? (optional)',
-    subs: ['Editing software', 'Music / stock', 'Subscriptions', 'Other'],
+    subs: ['Editing software', 'Music / stock', 'AI & other apps', 'Other'],
     hint: 'Apps, licenses and monthly subscriptions.',
     note: 'e.g. Tools for September',
     subNotes: {
       'Editing software': 'e.g. Editing app, yearly plan',
       'Music / stock': 'e.g. Music library, monthly',
-      'Subscriptions': 'e.g. Cloud storage, monthly'
+      'AI & other apps': 'e.g. AI assistant, monthly'
     },
     subOther: 'e.g. Scheduling tool'
   },
@@ -132,6 +133,18 @@ const COST_CATEGORIES = [
       'Collaborations': 'e.g. Shoutout from another creator'
     },
     subOther: 'e.g. Billboard, Flyers'
+  },
+  {
+    name: 'Fees', subLabel: 'What kind? (optional)',
+    subs: ['Agency commission', 'Payment / bank fees', 'Platform fees', 'Other'],
+    hint: 'Money taken from your income on the way to you. Log the income as the full amount and the fee here.',
+    note: 'e.g. Fees for September',
+    subNotes: {
+      'Agency commission': 'e.g. 20% commission on the October deal',
+      'Payment / bank fees': 'e.g. PayPal fee on the Patreon payout',
+      'Platform fees': 'e.g. Marketplace cut on course sales'
+    },
+    subOther: 'e.g. Currency exchange fee'
   },
   { name: 'Other', subs: [], hint: '', note: 'e.g. Insurance' }
 ];
@@ -892,9 +905,8 @@ function renderStatus() {
 function renderSpreadHint() {
   const hint = document.getElementById('spread-hint');
   const amount = Number(document.getElementById('entry-amount').value);
-  hint.hidden = entrySpan === 1;
   if (entrySpan === 1) {
-    hint.textContent = '';
+    hint.textContent = 'Pick the month the money is for. Not sure? Use the month it arrived.';
   } else if (amount > 0) {
     hint.textContent = `Spread evenly: ${formatIn(amount / entrySpan, entryCurrency)} per month.`;
   } else {
