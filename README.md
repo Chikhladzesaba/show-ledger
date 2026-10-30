@@ -57,11 +57,3 @@ Files:
 
 ---
 
-## Roadmap
-
-- **Next:** monthly stats per platform (views, videos, followers) and KPIs like RPM, income per video and cost per video.
-- **Later:** profit per video, sponsor totals, year-over-year comparison, spreadsheet import and export, official exchange rates.
-
----
-
-Built by [Saba Chikhladze](https://chikhladzesaba.github.io), Digital Product & Growth.
